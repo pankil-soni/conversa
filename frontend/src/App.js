@@ -4,7 +4,7 @@ import Navbar from "./components/Navbar/Navbar";
 import { useContext } from "react";
 import chatContext from "./context/chatContext";
 
-function App(props) {
+function App() {
   const { toggleColorMode } = useColorMode();
   const context = useContext(chatContext);
 

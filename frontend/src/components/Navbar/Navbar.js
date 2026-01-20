@@ -33,7 +33,7 @@ const Navbar = (props) => {
           top={5}
           left={5}
           display={{
-            md: "none",
+            lg: "none",
             base: "flex",
           }}
         >
@@ -63,20 +63,20 @@ const Navbar = (props) => {
       )}
       <Box
         p={3}
-        w={{ base: "94vw", md: "99vw" }}
+        w={{ base: "94vw", lg: "99vw" }}
         m={2}
         borderRadius="10px"
         borderWidth="2px"
         display={{
           base: "none",
-          md: "block",
+          lg: "block",
         }}
       >
         <Flex justify={"space-between"}>
           <Text fontSize="2xl">Conversa</Text>
 
           <Box
-            display={{ base: "none", md: "block" }}
+            display={{ base: "none", lg: "block" }}
             justifyContent="space-between"
             alignItems="center"
           >

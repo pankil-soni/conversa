@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import reportWebVitals from "./reportWebVitals";
-import { ChakraProvider } from "@chakra-ui/react";
+import { ChakraProvider, Flex } from "@chakra-ui/react";
 import { Outlet } from "react-router-dom";
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
@@ -11,16 +11,16 @@ import Home from "./components/Home";
 import Dashboard from "./components/Dashboard/Dashboard";
 import ChatState from "./context/appState";
 
-const token = localStorage.getItem("token");
-
 const router = createBrowserRouter([
   {
     path: "/",
     element: (
       <ChatState>
         <ChakraProvider>
-          <App token={token} />
+          <Flex direction={"column"} height={"100vh"} width={"100vw"}>
+          <App />
           <Outlet />
+          </Flex>
         </ChakraProvider>
       </ChatState>
     ),

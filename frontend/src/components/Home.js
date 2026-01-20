@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Box,
   Flex,
@@ -80,7 +80,7 @@ const Home = () => {
         isOpen={isOpen}
         onClose={onClose}
         colorScheme="red"
-        size={{ base: "md", md: "xl" }}
+        size={{ base: "md", lg: "xl" }}
       >
         <ModalOverlay />
         <ModalContent w={{ base: "95vw" }}>

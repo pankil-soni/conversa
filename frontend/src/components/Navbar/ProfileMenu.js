@@ -60,7 +60,7 @@ const ProfileMenu = (props) => {
               <Text
                 display={{
                   base: "none",
-                  md: "block",
+                  lg: "block",
                 }}
                 fontSize={"13px"}
               >
@@ -72,7 +72,7 @@ const ProfileMenu = (props) => {
               <MenuItem
                 display={{
                   base: "block",
-                  md: "none",
+                  lg: "none",
                 }}
                 onClick={toggleColorMode}
               >
