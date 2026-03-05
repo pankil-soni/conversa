@@ -22,18 +22,18 @@ const allMessage = async (req, res) => {
       deletedFrom: { $ne: req.user.id },
     });
 
-    messages.forEach(async (message) => {
-      let isUserAddedToSeenBy = false;
-      message.seenBy.forEach((element) => {
-        if (element.user == req.user.id) {
-          isUserAddedToSeenBy = true;
+    // Use Promise.all with map instead of forEach
+    await Promise.all(
+      messages.map(async (message) => {
+        const alreadySeen = message.seenBy.some(
+          (element) => element.user.toString() === req.user.id
+        );
+        if (!alreadySeen) {
+          message.seenBy.push({ user: req.user.id });
+          await message.save();
         }
-      });
-      if (!isUserAddedToSeenBy) {
-        message.seenBy.push({ user: req.user.id });
-      }
-      await message.save();
-    });
+      })
+    );
 
     res.json(messages);
   } catch (error) {
@@ -156,8 +156,7 @@ const getAiResponse = async (prompt, senderId, conversationId) => {
     var responseText = response.text();
 
     if (responseText.length < 1) {
-      responseText = "Woops!! thats soo long ask me something in short.";
-      return -1;
+      return null;
     }
 
     await Message.create({
@@ -178,8 +177,8 @@ const getAiResponse = async (prompt, senderId, conversationId) => {
 
     return botMessage;
   } catch (error) {
-    console.log(error.message);
-    return "some error occured while generating response";
+    console.error("AI response error:", error.message);
+    return null; // use null consistently
   }
 };
 
@@ -239,11 +238,14 @@ const deleteMessageHandler = async (data) => {
   }
 
   try {
-    deleteFrom.forEach(async (userId) => {
-      if (!message.deletedFrom.includes(userId)) {
+    for (const userId of deleteFrom) {
+      const alreadyDeleted = message.deletedFrom.some(
+        (id) => id.toString() === userId.toString()
+      );
+      if (!alreadyDeleted) {
         message.deletedFrom.push(userId);
       }
-    });
+    }
     await message.save();
 
     return true;

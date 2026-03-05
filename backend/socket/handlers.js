@@ -100,7 +100,7 @@ module.exports = (io, socket) => {
           conversationId
         );
 
-        if (responseMessage == -1) {
+        if (responseMessage === null) {
           return;
         }
 
