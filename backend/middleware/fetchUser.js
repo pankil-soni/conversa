@@ -1,8 +1,4 @@
 const jwt = require("jsonwebtoken");
-const env = require("dotenv");
-env.config({
-  path: "../../.env",
-});
 const { JWT_SECRET } = require("../secrets.js");
 
 const fetchuser = (req, res, next) => {

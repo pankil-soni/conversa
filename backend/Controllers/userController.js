@@ -1,11 +1,13 @@
 const {
   AWS_BUCKET_NAME,
   AWS_SECRET,
-  AWS_ACCESS_KEY,
+  AWS_ACCESS_KEY
 } = require("../secrets.js");
 const { S3Client } = require("@aws-sdk/client-s3");
 const { createPresignedPost } = require("@aws-sdk/s3-presigned-post");
 const User = require("../Models/User.js");
+const Conversation = require("../Models/Conversation.js");
+const bcrypt = require("bcryptjs");
 
 const getPresignedUrl = async (req, res) => {
   const filename = req.query.filename;
@@ -61,4 +63,51 @@ const getOnlineStatus = async (req, res) => {
   }
 };
 
-module.exports = { getPresignedUrl, getOnlineStatus };
+const getNonFriendsList = async (req, res) => {
+  try {
+    // find all friends(all other members in conversations) and user whose email not endswith bot
+    const conversations = await Conversation.find({
+      members: { $in: [req.user.id] },
+    });
+
+    const users = await User.find({
+      _id: { $nin: conversations.flatMap((c) => c.members) },
+      email: { $not: /bot$/ },
+    });
+
+    res.json(users);
+  } catch (error) {
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+const updateprofile = async (req, res) => {
+  try {
+    const dbuser = await User.findById(req.user.id);
+
+    if (req.body.newpassword) {
+      const passwordCompare = await bcrypt.compare(
+        req.body.oldpassword,
+        dbuser.password
+      );
+      if (!passwordCompare) {
+        return res.status(400).json({
+          error: "Invalid Credentials",
+        });
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      const secPass = await bcrypt.hash(req.body.newpassword, salt);
+      req.body.password = secPass;
+
+      delete req.body.oldpassword;
+      delete req.body.newpassword;
+    }
+    await User.findByIdAndUpdate(req.user.id, req.body);
+    res.status(200).json({ message: "Profile Updated" });
+  } catch (error) {
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+module.exports = { getPresignedUrl, getOnlineStatus, getNonFriendsList, updateprofile };

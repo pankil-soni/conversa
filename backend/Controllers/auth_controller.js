@@ -3,7 +3,6 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const Conversation = require("../Models/Conversation.js");
-const ObjectId = require("mongoose").Types.ObjectId;
 const nodemailer = require("nodemailer");
 const { JWT_SECRET, EMAIL, PASSWORD } = require("../secrets.js");
 
@@ -16,6 +15,18 @@ let mailTransporter = nodemailer.createTransport({
 });
 
 const register = async (req, res) => {
+  // Registration involves 3 dependent DB writes:
+  //   1. Create the new user
+  //   2. Create a personal AI bot user tied to this account
+  //   3. Create the initial conversation between the user and their bot
+  //
+  // All three must succeed together. MongoDB transactions require a replica set,
+  // so instead we use manual compensation: track every document that gets
+  // created and delete them all if any subsequent step fails, leaving the DB
+  // in a clean state (no partial accounts).
+  let newUser = null;
+  let botUser = null;
+
   try {
     console.log("register request received");
 
@@ -26,27 +37,20 @@ const register = async (req, res) => {
       });
     }
 
-    if (email.endsWith("bot")) {
-      return res.status(400).json({
-        error: "Invalid email",
-      });
-    }
-
-    const user = await User.findOne({
-      email: email,
-    });
-
-    if (user) {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
       return res.status(400).json({
         error: "User already exists",
       });
     }
+
     var imageUrl = `https://ui-avatars.com/api/?name=${name}&background=random&bold=true`;
 
     const salt = await bcrypt.genSalt(10);
     const secPass = await bcrypt.hash(password, salt);
 
-    const newUser = new User({
+    // Write 1: create the real user account
+    newUser = await User.create({
       name,
       email,
       password: secPass,
@@ -54,24 +58,26 @@ const register = async (req, res) => {
       about: "Hello World!!",
     });
 
-    await newUser.save();
-
-    const us = await User.findOne({ email: email });
-    us._id = new ObjectId();
-    us.name = "AI Chatbot";
-    us.email = email + "bot";
-    us.about = "I am an AI Chatbot to help you";
-    us.profilePic =
-      "https://play-lh.googleusercontent.com/Oe0NgYQ63TGGEr7ViA2fGA-yAB7w2zhMofDBR3opTGVvsCFibD8pecWUjHBF_VnVKNdJ";
-    await User.insertMany(us);
-
-    const bot = await User.findOne({ email: email + "bot" });
-
-    const newConversation = new Conversation({
-      members: [newUser._id, bot._id],
+    // Write 2: create the dedicated bot user for this account.
+    // Each real user gets their own bot instance so conversations stay isolated.
+    botUser = await User.create({
+      name: "AI Chatbot",
+      email: email + "bot",
+      password: secPass, // bot doesn't need login, but password is required
+      about: "I am an AI Chatbot to help you",
+      profilePic:
+        "https://play-lh.googleusercontent.com/Oe0NgYQ63TGGEr7ViA2fGA-yAB7w2zhMofDBR3opTGVvsCFibD8pecWUjHBF_VnVKNdJ",
+      isBot: true,
     });
 
-    await newConversation.save();
+    // Write 3: create the initial conversation between the user and their bot
+    await Conversation.create({
+      members: [newUser._id, botUser._id],
+      unreadCounts: [
+        { userId: newUser._id, count: 0 },
+        { userId: botUser._id, count: 0 },
+      ],
+    });
 
     const data = {
       user: {
@@ -84,6 +90,17 @@ const register = async (req, res) => {
       authtoken,
     });
   } catch (error) {
+    // Something went wrong during one of the DB writes.
+    // Manually delete any documents that were already created so we don't
+    // leave behind partial data (e.g. a user with no bot, or a bot with no
+    // conversation). This is the compensation step in lieu of a transaction.
+    try {
+      if (newUser) await User.findByIdAndDelete(newUser._id);
+      if (botUser) await User.findByIdAndDelete(botUser._id);
+    } catch (cleanupError) {
+      // Log but don't mask the original error
+      console.error("Cleanup after failed registration also failed:", cleanupError.message);
+    }
     console.error(error.message);
     res.status(500).send("Internal Server Error");
   }
@@ -110,7 +127,7 @@ const login = async (req, res) => {
         error: "Invalid Credentials",
       });
     }
-    console.log("hii");
+
     if (otp) {
       if (user.otp != otp) {
         return res.status(400).json({
@@ -135,6 +152,7 @@ const login = async (req, res) => {
     };
 
     const authtoken = jwt.sign(data, JWT_SECRET);
+
     res.json({
       authtoken,
       user: {
@@ -151,69 +169,12 @@ const login = async (req, res) => {
 };
 
 const authUser = async (req, res) => {
-  const token = req.header("auth-token");
-  if (!token) {
-    res.status(401).send("Please authenticate using a valid token");
-  }
-
   try {
-    const data = jwt.verify(token, JWT_SECRET);
-
-    if (!data) {
-      return res.status(401).send("Please authenticate using a valid token");
-    }
-
-    const user = await User.findById(data.user.id).select("-password");
+    // we get req.user from the fetchuser middleware, which verifies the JWT and extracts the user ID
+    const user = await User.findById(req.user.id).select("-password");
     res.json(user);
   } catch (error) {
     console.error(error.message);
-    res.status(500).send("Internal Server Error");
-  }
-};
-
-const getNonFriendsList = async (req, res) => {
-  try {
-    // find all friends(all other members in conversations) and user whose email not endswith bot
-    const conversations = await Conversation.find({
-      members: { $in: [req.user.id] },
-    });
-
-    const users = await User.find({
-      _id: { $nin: conversations.flatMap((c) => c.members) },
-      email: { $not: /bot$/ },
-    });
-
-    res.json(users);
-  } catch (error) {
-    res.status(500).send("Internal Server Error");
-  }
-};
-
-const updateprofile = async (req, res) => {
-  try {
-    const dbuser = await User.findById(req.user.id);
-
-    if (req.body.newpassword) {
-      const passwordCompare = await bcrypt.compare(
-        req.body.oldpassword,
-        dbuser.password
-      );
-      if (!passwordCompare) {
-        return res.status(400).json({
-          error: "Invalid Credentials",
-        });
-      }
-
-      const salt = await bcrypt.genSalt(10);
-      const secPass = await bcrypt.hash(req.body.newpassword, salt);
-      req.body.password = secPass;
-
-      delete req.body.oldpassword;
-      delete req.body.newpassword;
-    }
-    await User.findByIdAndUpdate(req.user.id, req.body);
-    res.status(200).json({ message: "Profile Updated" });
-  } catch (error) {
     res.status(500).send("Internal Server Error");
   }
 };
