@@ -251,19 +251,17 @@ export const ChatArea = () => {
         {/* Messages */}
         <Box ref={chatBoxRef} flex={1} overflowY="auto" sx={scrollbarSx} pt={1} mx={1}>
           {messageList?.map((message) =>
-            !message.deletedby?.includes(user._id) ? (
-              <SingleMessage
-                key={message._id}
-                message={message}
-                user={user}
-                receiver={receiver}
-                markdownToHtml={markdownToHtml}
-                scrollbarSx={scrollbarSx}
-                activeChatId={activeChatId}
-                removeMessageFromList={removeMessageFromList}
-                toast={toast}
-              />
-            ) : null
+            <SingleMessage
+              key={message._id}
+              message={message}
+              user={user}
+              receiver={receiver}
+              markdownToHtml={markdownToHtml}
+              scrollbarSx={scrollbarSx}
+              activeChatId={activeChatId}
+              removeMessageFromList={removeMessageFromList}
+              toast={toast}
+            />
           )}
         </Box>
 
