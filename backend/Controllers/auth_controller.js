@@ -84,7 +84,7 @@ const register = async (req, res) => {
       },
     };
 
-    const authtoken = jwt.sign(data, JWT_SECRET);
+    const authtoken = jwt.sign(data, JWT_SECRET, { expiresIn: "7d" });
     res.json({
       authtoken,
     });
@@ -154,7 +154,7 @@ const login = async (req, res) => {
       },
     };
 
-    const authtoken = jwt.sign(data, JWT_SECRET);
+    const authtoken = jwt.sign(data, JWT_SECRET, { expiresIn: "7d" });
 
     res.json({
       authtoken,
@@ -198,12 +198,6 @@ const sendotp = async (req, res) => {
     user.otp = hashedOtp;
     user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // OTP valid for 5 minutes
     await user.save();
-
-    //delete otp after 5 minutes
-    setTimeout(() => {
-      user.otp = "";
-      user.save();
-    }, 300000);
 
     let mailDetails = {
       from: `"Conversa" <${EMAIL}>`,
