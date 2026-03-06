@@ -1,136 +1,146 @@
+import { useState, useEffect, useCallback } from "react";
 import chatContext from "./chatContext";
-import { useState, useEffect } from "react";
-import io from "socket.io-client";
+import socket, { connectSocket, emitSetup } from "../lib/socket";
+import { authApi, conversationApi } from "../lib/api";
 
-const hostName = "http://localhost:5500"
-// const hostName = "https://chat-app-u2cq.onrender.com";
-
-// Socket is created with autoConnect: false so it doesn't attempt a
-// connection before we have a JWT to include in the handshake auth.
-// Call socket.connect() only after setting socket.auth.token.
-var socket = io(hostName, {
-  autoConnect: false,
-  auth: { token: localStorage.getItem("token") || "" },
-});
-
-const ChatState = (props) => {
+/**
+ * Global application state provider.
+ *
+ * Holds auth state, the current user, conversation list, active chat state, and
+ * the socket reference.  Every piece of "shared" data that more than one
+ * component needs lives here.
+ */
+const ChatState = ({ children }) => {
+  /* ─── auth ───────────────────────────────────────────────────────────── */
   const [isAuthenticated, setIsAuthenticated] = useState(
-    localStorage.getItem("token") ? true : false
+    () => !!localStorage.getItem("token")
   );
-  const [user, setUser] = useState(localStorage.getItem("user") || {});
+  const [user, setUser] = useState({});
+
+  /* ─── chat state ─────────────────────────────────────────────────────── */
   const [receiver, setReceiver] = useState({});
   const [messageList, setMessageList] = useState([]);
   const [activeChatId, setActiveChatId] = useState("");
   const [myChatList, setMyChatList] = useState([]);
   const [originalChatList, setOriginalChatList] = useState([]);
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
+  const [typingConversations, setTypingConversations] = useState({});
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchData = async () => {
+  /* ─── fetch conversation list ────────────────────────────────────────── */
+  const fetchConversations = useCallback(async () => {
     try {
-      const response = await fetch(`${hostName}/conversation/`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "auth-token": localStorage.getItem("token"),
-        },
-      });
-      if (!response.ok) {
-        throw new Error("Failed to fetch data" + (await response.text()));
-      }
-      const jsonData = await response.json();
-      setMyChatList(jsonData);
+      const data = await conversationApi.list();
+      setMyChatList(data);
+      setOriginalChatList(data);
+    } catch (err) {
+      console.error("Failed to fetch conversations:", err);
+    } finally {
       setIsLoading(false);
-      setOriginalChatList(jsonData);
-    } catch (error) {
-      console.log(error);
     }
-  };
-
-  useEffect(() => {
-    // The backend now includes { userId } in both events so the client can
-    // identify which conversation partner changed status.
-    socket.on("receiver-online", (data) => {
-      setReceiver((prevReceiver) => ({ ...prevReceiver, isOnline: true }));
-    });
   }, []);
 
+  /* ─── bootstrap: validate token → fetch user → connect socket ────────── */
   useEffect(() => {
-    socket.on("receiver-offline", (data) => {
-      setReceiver((prevReceiver) => ({
-        ...prevReceiver,
+    const bootstrap = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        const data = await authApi.getMe();
+        setUser(data);
+        setIsAuthenticated(true);
+        connectSocket(token);
+        emitSetup();
+        fetchConversations();
+      } catch {
+        localStorage.removeItem("token");
+        setIsAuthenticated(false);
+        setUser({});
+        setIsLoading(false);
+      }
+    };
+    bootstrap();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ─── global socket listeners (online / offline) ─────────────────────── */
+  useEffect(() => {
+    const onOnline = () =>
+      setReceiver((prev) => ({ ...prev, isOnline: true }));
+    const onOffline = () =>
+      setReceiver((prev) => ({
+        ...prev,
         isOnline: false,
         lastSeen: new Date().toISOString(),
       }));
-    });
+
+    socket.on("receiver-online", onOnline);
+    socket.on("receiver-offline", onOffline);
+
+    return () => {
+      socket.off("receiver-online", onOnline);
+      socket.off("receiver-offline", onOffline);
+    };
   }, []);
 
+  /* ─── global typing listeners (for chat-list indicator) ──────────────── */
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        if (token) {
-          const res = await fetch(`${hostName}/auth/me`, {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              "auth-token": token,
-            },
-          });
-          const data = await res.json();
-          setUser(data);
-          console.log("user fetched");
-          setIsAuthenticated(true);
-          // Attach the token to the socket handshake then connect.
-          // The backend JWT middleware will validate it before accepting the connection.
-          socket.auth = { token };
-          if (!socket.connected) socket.connect();
-          socket.emit("setup");
-        }
-      } catch (error) {
-        console.log(error);
-        setIsAuthenticated(false);
-        setUser({});
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-      }
+    const onTyping = (data) => {
+      // Ignore events we ourselves emitted
+      if (!data.conversationId || data.typer === user._id) return;
+      setTypingConversations((prev) => ({ ...prev, [data.conversationId]: true }));
+    };
+    const onStopTyping = (data) => {
+      if (!data.conversationId) return;
+      setTypingConversations((prev) => {
+        const next = { ...prev };
+        delete next[data.conversationId];
+        return next;
+      });
     };
 
-    fetchUser();
-    fetchData();
-  }, []);
+    socket.on("typing", onTyping);
+    socket.on("stop-typing", onStopTyping);
+
+    return () => {
+      socket.off("typing", onTyping);
+      socket.off("stop-typing", onStopTyping);
+    };
+  }, [user._id]);
+
+  /* ─── context value ──────────────────────────────────────────────────── */
+  const value = {
+    isAuthenticated,
+    setIsAuthenticated,
+    user,
+    setUser,
+    receiver,
+    setReceiver,
+    messageList,
+    setMessageList,
+    activeChatId,
+    setActiveChatId,
+    myChatList,
+    setMyChatList,
+    originalChatList,
+    fetchConversations,
+    socket,
+    isOtherUserTyping,
+    setIsOtherUserTyping,
+    typingConversations,
+    isChatLoading,
+    setIsChatLoading,
+    isLoading,
+    setIsLoading,
+  };
 
   return (
-    <chatContext.Provider
-      value={{
-        isAuthenticated,
-        setIsAuthenticated,
-        user,
-        setUser,
-        receiver,
-        setReceiver,
-        messageList,
-        setMessageList,
-        activeChatId,
-        setActiveChatId,
-        myChatList,
-        setMyChatList,
-        originalChatList,
-        fetchData,
-        hostName,
-        socket,
-        isOtherUserTyping,
-        setIsOtherUserTyping,
-        isChatLoading,
-        setIsChatLoading,
-        isLoading,
-        setIsLoading,
-      }}
-    >
-      {props.children}
-    </chatContext.Provider>
+    <chatContext.Provider value={value}>{children}</chatContext.Provider>
   );
 };
 
 export default ChatState;
+

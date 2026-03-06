@@ -4,44 +4,43 @@ import MyChatList from "./MyChatList";
 import NewChats from "./NewChats";
 
 const Chats = () => {
-  const [activeTab, setactiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState(0);
 
   return (
-    <>
-      <Tabs
-        isFitted
-        variant="enclosed"
-        w={{ base: "95vw", lg: "100%" }}
-        index={activeTab}
-        colorScheme="purple"
-        h={"100%"}
-      >
-        <TabPanels>
-          <TabPanel
-            py={1}
-            mt={{ base: 2, lg: 0 }}
-            px={2}
-            w={{ base: "96vw", lg: "29vw" }}
-            borderRightWidth={{ base: "0px", lg: "1px" }}
-            h={{
-              base: "85vh",
-              lg: "88.5vh",
-            }}
-          >
-            <MyChatList setactiveTab={setactiveTab} />
-          </TabPanel>
-          <TabPanel
-            mt={{ base: 2, lg: 0 }}
-            px={{ base: 0, lg: 2 }}
-            w={{ base: "96vw", lg: "29vw" }}
-            // h={{ base: "80vh", lg: "88.5vh" }}
-            borderRightWidth={{ base: "0px", lg: "1px" }}
-          >
-            <NewChats setactiveTab={setactiveTab} />
-          </TabPanel>
-        </TabPanels>
-      </Tabs>
-    </>
+    <Tabs
+      isFitted
+      variant="enclosed"
+      index={activeTab}
+      colorScheme="purple"
+      display="flex"
+      flexDirection="column"
+      h="100%"
+      overflow="hidden"
+    >
+      <TabPanels flex={1} display="flex" flexDirection="column" overflow="hidden">
+        <TabPanel
+          py={1}
+          px={2}
+          display={activeTab === 0 ? "flex" : "none"}
+          flexDirection="column"
+          flex={1}
+          overflow="hidden"
+          borderRightWidth={{ base: 0, lg: "1px" }}
+        >
+          <MyChatList setActiveTab={setActiveTab} />
+        </TabPanel>
+        <TabPanel
+          px={{ base: 0, lg: 2 }}
+          display={activeTab === 1 ? "flex" : "none"}
+          flexDirection="column"
+          flex={1}
+          overflow="hidden"
+          borderRightWidth={{ base: 0, lg: "1px" }}
+        >
+          <NewChats setActiveTab={setActiveTab} />
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
   );
 };
 

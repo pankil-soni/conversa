@@ -10,9 +10,10 @@ import {
 } from "@chakra-ui/react";
 
 const NewMessage = (props) => {
-  const sender = props.sender;
   const data = props.data;
+  const sender = data.sender;
   const handleChatOpen = props.handleChatOpen;
+
   return (
     <>
       <Flex
@@ -54,14 +55,16 @@ const NewMessage = (props) => {
                   : sender.name}
 
                 <Text
+                  as="span"
+                  display="block"
                   color={"white"}
                   fontSize={"sm"}
                   letterSpacing={0}
                   fontWeight={"normal"}
                 >
-                  {data.text.length > 15
-                    ? " " + data.text.substring(0, 15) + "..."
-                    : data.text}
+                  {data.message.text.length > 15
+                    ? " " + data.message.text.substring(0, 15) + "..."
+                    : data.message.text}
                 </Text>
               </Text>
             </Box>
@@ -69,7 +72,7 @@ const NewMessage = (props) => {
               size={"sm"}
               colorScheme={"whiteAlpha"}
               color={"white"}
-              onClick={() => handleChatOpen(data.conversationId, sender)}
+              onClick={() => handleChatOpen(data.message.conversationId, sender)}
             >
               Open
             </Button>

@@ -14,170 +14,142 @@ import {
   Input,
   Stack,
   Text,
-  Flex,
   Image,
-  Circle,
   Box,
+  useToast,
 } from "@chakra-ui/react";
-import { ChevronDownIcon, ChevronUpIcon, EditIcon } from "@chakra-ui/icons";
+import { ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import chatContext from "../../context/chatContext";
-import _isEqual from "lodash/isEqual";
-import { useToast } from "@chakra-ui/react";
+import { userApi } from "../../lib/api";
 
 export const ProfileModal = ({ isOpen, onClose, user, setUser }) => {
-  const context = useContext(chatContext);
-  const { hostName } = context;
+  const { user: currentUser, setUser: setGlobalUser } = useContext(chatContext);
   const [editing, setEditing] = useState(false);
   const [editedUser, setEditedUser] = useState(user);
-  const [showchangepassword, setshowchangepassword] = useState(false);
-
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const toast = useToast();
 
-  // if user is not defined then wait for the user to be fetched
+  // Sync editedUser when user prop changes
   useEffect(() => {
-    if (!_isEqual(user, editedUser)) {
-      setEditedUser(user);
-    }
+    setEditedUser(user);
   }, [user]);
-
-  const handleSave = async () => {
-    try {
-      setUser(editedUser);
-    } catch (error) { }
-
-    context.setUser(editedUser);
-
-    // send the updated user to the server
-
-    try {
-      const response = await fetch(`${hostName}/user/update`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "auth-token": localStorage.getItem("token"),
-        },
-        body: JSON.stringify(editedUser),
-      });
-
-      const json = await response.json();
-
-      if (response.status !== 200) {
-        toast({
-          title: "An error occurred.",
-          description: json.error,
-          status: "error",
-          duration: 5000,
-          isClosable: true,
-        });
-      } else {
-        toast({
-          title: "User updated",
-          description: "User updated successfully",
-          status: "success",
-          duration: 5000,
-          isClosable: true,
-        });
-        setEditing(false);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const handleEdit = () => {
-    setEditing(true);
-  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setEditedUser({ ...editedUser, [name]: value });
+    setEditedUser((prev) => ({ ...prev, [name]: value }));
   };
+
+  const handleSave = async () => {
+    // Optimistic update
+    if (setUser) setUser(editedUser);
+    setGlobalUser(editedUser);
+
+    try {
+      await userApi.updateProfile(editedUser);
+      toast({
+        title: "Profile updated",
+        description: "Your profile was updated successfully",
+        status: "success",
+        duration: 5000,
+        isClosable: true,
+      });
+      setEditing(false);
+    } catch (err) {
+      toast({
+        title: "An error occurred",
+        description: err.message,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const isOwnProfile = user._id === currentUser?._id;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
       <ModalOverlay />
       <ModalContent>
         <ModalHeader p={6} borderBottomWidth="1px" borderColor="gray.100">
-          <Flex justify="space-between" align="center">
-            <Text fontSize="xl" fontWeight="bold">
-              Profile
-            </Text>
-          </Flex>
+          <Text fontSize="xl" fontWeight="bold">
+            Profile
+          </Text>
         </ModalHeader>
         <ModalCloseButton />
+
         <ModalBody>
           <Tabs
             isFitted
             variant="enclosed"
             index={editing ? 1 : 0}
-            onChange={(index) => setEditing(index === 1)}
+            onChange={(idx) => setEditing(idx === 1)}
           >
             <TabPanels>
+              {/* View tab */}
               <TabPanel>
                 <Stack spacing={2}>
                   <Image
                     borderRadius="full"
                     boxSize={{ base: "100px", lg: "150px" }}
                     src={user.profilePic}
-                    alt="Dan Abramov"
+                    alt="profile"
                     mx="auto"
                   />
                   <Text fontSize="xx-large" fontWeight="bold">
                     {user.name}
                   </Text>
                   <Text fontSize="md">About: {user.about}</Text>
-                  {!user.email?.includes("combot") && <Text fontSize="md">email: {user.email}</Text>}
+                  {!user.isBot && (
+                    <Text fontSize="md">Email: {user.email}</Text>
+                  )}
                 </Stack>
               </TabPanel>
+
+              {/* Edit tab */}
               <TabPanel>
                 <Stack spacing={4}>
-                  <Circle
-                    onClick={() => {
-                      console.log("clicked");
-                    }}
-                  >
-                    <Image
-                      borderRadius="full"
-                      boxSize={{ base: "100px", lg: "150px" }}
-                      src={user.profilePic}
-                      alt="profile-pic"
-                      mx="auto"
-                    />
-                  </Circle>
+                  <Image
+                    borderRadius="full"
+                    boxSize={{ base: "100px", lg: "150px" }}
+                    src={user.profilePic}
+                    alt="profile"
+                    mx="auto"
+                  />
                   <Input
                     name="name"
                     placeholder="Name"
-                    value={editedUser.name}
+                    value={editedUser.name || ""}
                     onChange={handleChange}
                   />
                   <Input
                     name="about"
-                    placeholder="about"
-                    value={editedUser.about}
+                    placeholder="About"
+                    value={editedUser.about || ""}
                     onChange={handleChange}
                   />
                   <Button
-                    onClick={() => setshowchangepassword(!showchangepassword)}
+                    onClick={() => setShowChangePassword((p) => !p)}
                   >
-                    change my password{" "}
-                    {showchangepassword ? (
+                    Change my password{" "}
+                    {showChangePassword ? (
                       <ChevronUpIcon />
                     ) : (
                       <ChevronDownIcon />
                     )}
                   </Button>
-                  {showchangepassword && (
+                  {showChangePassword && (
                     <Box>
                       <Input
                         name="oldpassword"
-                        placeholder="old password"
+                        placeholder="Old password"
                         type="password"
                         onChange={handleChange}
                         mb={2}
                       />
                       <Input
                         name="newpassword"
-                        placeholder="new password"
+                        placeholder="New password"
                         type="password"
                         onChange={handleChange}
                       />
@@ -188,22 +160,22 @@ export const ProfileModal = ({ isOpen, onClose, user, setUser }) => {
             </TabPanels>
           </Tabs>
         </ModalBody>
+
         <ModalFooter>
           {editing ? (
-            <Button colorScheme="purple" mr={3} onClick={handleSave}>
-              Save
-            </Button>
+            <>
+              <Button colorScheme="purple" mr={3} onClick={handleSave}>
+                Save
+              </Button>
+              <Button onClick={() => setEditing(false)}>Back</Button>
+            </>
           ) : (
-            <Button
-              colorScheme="purple"
-              display={user._id !== context.user?._id ? "none" : "block"}
-              mr={3}
-              onClick={handleEdit}
-            >
-              Edit
-            </Button>
+            isOwnProfile && (
+              <Button colorScheme="purple" mr={3} onClick={() => setEditing(true)}>
+                Edit
+              </Button>
+            )
           )}
-          {editing && <Button onClick={() => setEditing(false)}>Back</Button>}
         </ModalFooter>
       </ModalContent>
     </Modal>

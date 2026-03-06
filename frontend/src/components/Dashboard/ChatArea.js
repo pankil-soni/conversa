@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useContext } from "react";
+import { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { ArrowForwardIcon } from "@chakra-ui/icons";
 import Lottie from "react-lottie";
-import animationdata from "../../typingAnimation.json";
+import animationData from "../../typingAnimation.json";
 import {
   Box,
   InputGroup,
@@ -13,46 +13,38 @@ import {
   InputLeftElement,
   useToast,
   useDisclosure,
+  Flex,
+  useColorModeValue,
 } from "@chakra-ui/react";
 import { FaFileUpload } from "react-icons/fa";
-import { marked } from "marked";
 
 import chatContext from "../../context/chatContext";
 import ChatAreaTop from "./ChatAreaTop";
 import FileUploadModal from "../miscellaneous/FileUploadModal";
 import ChatLoadingSpinner from "../miscellaneous/ChatLoadingSpinner";
-import axios from "axios";
 import SingleMessage from "./SingleMessage";
+import socket from "../../lib/socket";
+import {
+  emitSendMessage,
+  emitStopTyping,
+  emitTyping,
+  emitLeaveChat,
+} from "../../lib/socket";
+import { userApi } from "../../lib/api";
+import { markdownToHtml, scrollbarSx } from "../../lib/utils";
+import axios from "axios";
 
-const scrollbarconfig = {
-  "&::-webkit-scrollbar": {
-    width: "5px",
-    height: "5px",
-  },
-  "&::-webkit-scrollbar-thumb": {
-    backgroundColor: "gray.300",
-    borderRadius: "5px",
-  },
-  "&::-webkit-scrollbar-thumb:hover": {
-    backgroundColor: "gray.400",
-  },
-  "&::-webkit-scrollbar-track": {
-    display: "none",
-  },
-};
-
-const markdownToHtml = (markdownText) => {
-  const html = marked(markdownText);
-  return { __html: html };
+const lottieOptions = {
+  loop: true,
+  autoplay: true,
+  animationData,
+  rendererSettings: { preserveAspectRatio: "xMidYMid slice" },
 };
 
 export const ChatArea = () => {
-  const context = useContext(chatContext);
   const {
-    hostName,
     user,
     receiver,
-    socket,
     activeChatId,
     messageList,
     setMessageList,
@@ -61,379 +53,270 @@ export const ChatArea = () => {
     setActiveChatId,
     setReceiver,
     setMyChatList,
-    myChatList,
     isChatLoading,
-  } = context;
-  const [typing, settyping] = useState(false);
+  } = useContext(chatContext);
+
+  const [typing, setTyping] = useState(false);
+  const [messageText, setMessageText] = useState("");
   const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const chatBoxRef = useRef(null);
+  const inputRef = useRef(null);
+  const inputBg = useColorModeValue("white", "gray.800");
 
-  // Lottie Options for typing
-  const defaultOptions = {
-    loop: true,
-    autoplay: true,
-    animationData: animationdata,
-    rendererSettings: {
-      preserveAspectRatio: "xMidYMid slice",
-    },
-  };
+  /* ─── helpers ────────────────────────────────────────────────────────── */
+  const scrollToBottom = useCallback((smooth = false) => {
+    requestAnimationFrame(() => {
+      chatBoxRef.current?.scrollTo({
+        top: chatBoxRef.current.scrollHeight,
+        behavior: smooth ? "smooth" : "auto",
+      });
+    });
+  }, []);
 
+  /* ─── browser back button handling ───────────────────────────────────── */
   useEffect(() => {
-    return () => {
-      window.addEventListener("popstate", () => {
-        socket.emit("leave-chat", activeChatId);
-        setActiveChatId("");
-        setMessageList([]);
-        setReceiver({});
-      });
+    const onPopState = () => {
+      if (activeChatId) emitLeaveChat(activeChatId);
+      setActiveChatId("");
+      setMessageList([]);
+      setReceiver({});
     };
-  }, [socket, activeChatId, setActiveChatId, setMessageList, setReceiver]);
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [activeChatId, setActiveChatId, setMessageList, setReceiver]);
 
+  /* ─── socket listeners ───────────────────────────────────────────────── */
   useEffect(() => {
-    socket.on("user-joined-room", (userId) => {
-      const updatedList = messageList.map((message) => {
-        if (message.senderId === user._id && userId !== user._id) {
-          const index = message.seenBy.findIndex(
-            (seen) => seen.user === userId
-          );
-          if (index === -1) {
-            message.seenBy.push({ user: userId, seenAt: new Date() });
-          }
-        }
-        return message;
-      });
-      setMessageList(updatedList);
-    });
-
-    socket.on("typing", (data) => {
-      if (data.typer !== user._id) {
-        setIsOtherUserTyping(true);
-      }
-    });
-
-    socket.on("stop-typing", (data) => {
-      if (data.typer !== user._id) {
-        setIsOtherUserTyping(false);
-      }
-    });
-
-    socket.on("receive-message", (data) => {
-      setMessageList((prev) => [...prev, data]);
-      setTimeout(() => {
-        document.getElementById("chat-box")?.scrollTo({
-          top: document.getElementById("chat-box").scrollHeight,
-          behavior: "smooth",
-        });
-      }, 100);
-    });
-
-    socket.on("message-deleted", (data) => {
-      const { messageId } = data;
-      setMessageList((prev) => prev.filter((msg) => msg._id !== messageId));
-    });
-
-    return () => {
-      socket.off("typing");
-      socket.off("stop-typing");
-      socket.off("receive-message");
-      socket.off("message-deleted");
-    };
-  }, [socket, messageList, setMessageList, user._id, setIsOtherUserTyping]);
-
-  const handleTyping = () => {
-    const messageInput = document.getElementById("new-message");
-    if (!messageInput) return;
-
-    if (messageInput.value === "" && typing) {
-      settyping(false);
-      socket.emit("stop-typing", {
-        typer: user._id,
-        conversationId: activeChatId,
-      });
-    } else if (messageInput.value !== "" && !typing) {
-      settyping(true);
-      socket.emit("typing", {
-        typer: user._id,
-        conversationId: activeChatId,
-      });
-    }
-  };
-
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter") {
-      handleSendMessage(e);
-    }
-  };
-
-  const getPreSignedUrl = async (fileName, fileType) => {
-    if (!fileName || !fileType) return;
-    try {
-      const response = await fetch(
-        `${hostName}/user/presigned-url?filename=${fileName}&filetype=${fileType}`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "auth-token": localStorage.getItem("token"),
-          },
-        }
+    const onJoinedRoom = (userId) => {
+      if (userId === user._id) return;
+      setMessageList((prev) =>
+        prev.map((msg) => {
+          if (msg.senderId !== user._id) return msg;
+          const alreadySeen = msg.seenBy?.some((s) => s.user === userId);
+          if (alreadySeen) return msg;
+          return {
+            ...msg,
+            seenBy: [...(msg.seenBy || []), { user: userId, seenAt: new Date() }],
+          };
+        })
       );
+    };
 
-      if (!response.ok) {
-        throw new Error("Failed to get pre-signed URL");
-      }
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      toast({
-        title: error.message,
-        status: "error",
-        duration: 3000,
-        isClosable: true,
-      });
+    const onTyping = (data) => {
+      if (data.typer !== user._id) setIsOtherUserTyping(true);
+    };
+    const onStopTyping = (data) => {
+      if (data.typer !== user._id) setIsOtherUserTyping(false);
+    };
+
+    const onReceiveMessage = (data) => {
+      setMessageList((prev) => [...prev, data]);
+      scrollToBottom(true);
+    };
+
+    const onMessageDeleted = ({ messageId }) => {
+      setMessageList((prev) => prev.filter((m) => m._id !== messageId));
+    };
+
+    socket.on("user-joined-room", onJoinedRoom);
+    socket.on("typing", onTyping);
+    socket.on("stop-typing", onStopTyping);
+    socket.on("receive-message", onReceiveMessage);
+    socket.on("message-deleted", onMessageDeleted);
+
+    return () => {
+      socket.off("user-joined-room", onJoinedRoom);
+      socket.off("typing", onTyping);
+      socket.off("stop-typing", onStopTyping);
+      socket.off("receive-message", onReceiveMessage);
+      socket.off("message-deleted", onMessageDeleted);
+    };
+  }, [user._id, setMessageList, setIsOtherUserTyping, scrollToBottom]);
+
+  /* ─── scroll to bottom on message list change ───────────────────────── */
+  useEffect(() => {
+    scrollToBottom();
+  }, [messageList.length, scrollToBottom]);
+
+  /* ─── typing indicator ───────────────────────────────────────────────── */
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setMessageText(val);
+
+    if (val && !typing) {
+      setTyping(true);
+      emitTyping({ typer: user._id, conversationId: activeChatId, receiverId: receiver._id });
+    } else if (!val && typing) {
+      setTyping(false);
+      emitStopTyping({ typer: user._id, conversationId: activeChatId, receiverId: receiver._id });
     }
   };
 
-  const handleSendMessage = async (e, messageText, file) => {
+  /* ─── get presigned URL ──────────────────────────────────────────────── */
+  const getPresignedUrl = async (fileName, fileType) => {
+    try {
+      return await userApi.getPresignedUrl(fileName, fileType);
+    } catch (err) {
+      toast({ title: err.message, status: "error", duration: 3000, isClosable: true });
+    }
+  };
+
+  /* ─── send message ───────────────────────────────────────────────────── */
+  const handleSendMessage = async (e, text, file) => {
     e.preventDefault();
     const awsHost = "https://conversa-chat.s3.ap-south-1.amazonaws.com/";
+    const finalText = text ?? messageText;
 
-    if (!messageText) {
-      messageText = document.getElementById("new-message")?.value || "";
-    }
+    emitStopTyping({ typer: user._id, conversationId: activeChatId, receiverId: receiver._id });
+    setTyping(false);
 
-    socket.emit("stop-typing", {
-      typer: user._id,
-      conversationId: activeChatId,
-    });
-
-    if (messageText === "" && !file) {
-      toast({
-        title: "Message cannot be empty",
-        status: "warning",
-        duration: 3000,
-        isClosable: true,
-      });
+    if (!finalText && !file) {
+      toast({ title: "Message cannot be empty", status: "warning", duration: 3000, isClosable: true });
       return;
     }
 
     let key;
     if (file) {
       try {
-        const { url, fields } = await getPreSignedUrl(file.name, file.type);
+        const { url, fields } = await getPresignedUrl(file.name, file.type);
         const formData = new FormData();
-        Object.entries({ ...fields, file }).forEach(([k, v]) => {
-          formData.append(k, v);
+        Object.entries({ ...fields, file }).forEach(([k, v]) => formData.append(k, v));
+        const res = await axios.post(url, formData, {
+          headers: { "Content-Type": "multipart/form-data" },
         });
-
-        const response = await axios.post(url, formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        });
-
-        if (response.status !== 201) {
-          throw new Error("Failed to upload file");
-        }
-
+        if (res.status !== 201) throw new Error("Failed to upload file");
         key = fields.key;
-      } catch (error) {
-        toast({
-          title: error.message,
-          status: "error",
-          duration: 3000,
-          isClosable: true,
-        });
+      } catch (err) {
+        toast({ title: err.message, status: "error", duration: 3000, isClosable: true });
         return;
       }
     }
 
-    const data = {
-      text: messageText,
+    emitSendMessage({
+      text: finalText,
       conversationId: activeChatId,
       imageUrl: file ? `${awsHost}${key}` : null,
-    };
+    });
 
-    socket.emit("send-message", data);
+    setMessageText("");
+    if (inputRef.current) inputRef.current.value = "";
 
-    const inputElem = document.getElementById("new-message");
-    if (inputElem) {
-      inputElem.value = "";
-    }
-
-    setTimeout(() => {
-      document.getElementById("chat-box")?.scrollTo({
-        top: document.getElementById("chat-box").scrollHeight,
-        behavior: "smooth",
-      });
-    }, 100);
-
-    setMyChatList(
-      await myChatList
-        .map((chat) => {
-          if (chat._id === activeChatId) {
-            chat.latestmessage = messageText;
-            chat.updatedAt = new Date().toUTCString();
-          }
-          return chat;
-        })
+    setMyChatList((prev) =>
+      prev
+        .map((c) =>
+          c._id === activeChatId
+            ? { ...c, latestmessage: finalText, updatedAt: new Date().toISOString() }
+            : c
+        )
         .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
     );
   };
 
   const removeMessageFromList = (messageId) => {
-    setMessageList((prev) => prev.filter((msg) => msg._id !== messageId));
+    setMessageList((prev) => prev.filter((m) => m._id !== messageId));
   };
 
+  /* ─── empty state ────────────────────────────────────────────────────── */
+  if (!activeChatId) {
+    return (
+      <Flex
+        display={{ base: "none", lg: "flex" }}
+        direction="column"
+        align="center"
+        justify="center"
+        flex={1}
+      >
+        <Text fontSize="5xl" fontWeight="bold">
+          Conversa
+        </Text>
+        <Text fontSize="xl">Online chatting app</Text>
+        <Text fontSize="md" color="gray.500" mt={2}>
+          Select a chat to start messaging
+        </Text>
+      </Flex>
+    );
+  }
+
+  /* ─── active chat ────────────────────────────────────────────────────── */
   return (
     <>
-      {activeChatId !== "" ? (
-        <>
-          <Box
-            justifyContent="space-between"
-            h="100%"
-            w={{
-              base: "100vw",
-              lg: "100%",
-            }}
-          >
-            <ChatAreaTop />
+      <Flex direction="column" h="100%" overflow="hidden">
+        {/* Top bar */}
+        <ChatAreaTop />
 
-            {isChatLoading && <ChatLoadingSpinner />}
+        {/* Loading */}
+        {isChatLoading && <ChatLoadingSpinner />}
 
-            <Box
-              id="chat-box"
-              h="85%"
-              overflowY="auto"
-              sx={scrollbarconfig}
-              mt={1}
-              mx={1}
-            >
-              {messageList?.map((message) =>
-                !message.deletedby?.includes(user._id) ? (
-                  <SingleMessage
-                    key={message._id}
-                    message={message}
-                    user={user}
-                    receiver={receiver}
-                    markdownToHtml={markdownToHtml}
-                    scrollbarconfig={scrollbarconfig}
-                    socket={socket}
-                    activeChatId={activeChatId}
-                    removeMessageFromList={removeMessageFromList}
-                    toast={toast}
-                  />
-                ) : null
+        {/* Messages */}
+        <Box ref={chatBoxRef} flex={1} overflowY="auto" sx={scrollbarSx} pt={1} mx={1}>
+          {messageList?.map((message) =>
+            !message.deletedby?.includes(user._id) ? (
+              <SingleMessage
+                key={message._id}
+                message={message}
+                user={user}
+                receiver={receiver}
+                markdownToHtml={markdownToHtml}
+                scrollbarSx={scrollbarSx}
+                activeChatId={activeChatId}
+                removeMessageFromList={removeMessageFromList}
+                toast={toast}
+              />
+            ) : null
+          )}
+        </Box>
+
+        {/* Typing indicator + input (flex-shrink: 0, no position: fixed) */}
+        <Box flexShrink={0} bg={inputBg} px={2} py={{ base: 2, lg: 1 }}>
+          {isOtherUserTyping && (
+            <Box ml={3} mb={1} w="fit-content">
+              <Lottie
+                options={lottieOptions}
+                height={20}
+                width={20}
+                isStopped={false}
+                isPaused={false}
+              />
+            </Box>
+          )}
+          <FormControl>
+            <InputGroup>
+              {!receiver?.isBot && (
+                <InputLeftElement ml={1}>
+                  <Button size="sm" onClick={onOpen} borderRadius="lg">
+                    <FaFileUpload />
+                  </Button>
+                </InputLeftElement>
               )}
-            </Box>
-
-            <Box
-              py={2}
-              position="fixed"
-              w={{
-                base: "100%",
-                lg: "70%",
-              }}
-              bottom={{
-                base: 1,
-                lg: 3,
-              }}
-              backgroundColor={
-                localStorage.getItem("chakra-ui-color-mode") === "dark"
-                  ? "#1a202c"
-                  : "white"
-              }
-            >
-              <Box
-                mx={{
-                  base: 6,
-                  lg: 3,
-                }}
-                w="fit-content"
-              >
-                {isOtherUserTyping && (
-                  <Lottie
-                    options={defaultOptions}
-                    height={20}
-                    width={20}
-                    isStopped={false}
-                    isPaused={false}
-                  />
-                )}
-              </Box>
-              <FormControl>
-                <InputGroup
-                  w={{
-                    base: "95%",
-                    lg: "98%",
-                  }}
-                  m="auto"
-                  onKeyDown={handleKeyPress}
+              <Input
+                ref={inputRef}
+                placeholder="Type a message"
+                value={messageText}
+                onChange={handleInputChange}
+                onKeyDown={(e) => e.key === "Enter" && handleSendMessage(e)}
+                borderRadius="10px"
+                pl={!receiver?.isBot ? 12 : 4}
+              />
+              <InputRightElement mr={1}>
+                <Button
+                  onClick={(e) => handleSendMessage(e)}
+                  size="sm"
+                  borderRadius="10px"
                 >
-                  {!receiver?.email?.includes("bot") && (
-                    <InputLeftElement>
-                      <Button
-                        mx={2}
-                        size="sm"
-                        onClick={onOpen}
-                        borderRadius="lg"
-                      >
-                        <FaFileUpload />
-                      </Button>
-                    </InputLeftElement>
-                  )}
+                  <ArrowForwardIcon />
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+          </FormControl>
+        </Box>
+      </Flex>
 
-                  <Input
-                    placeholder="Type a message"
-                    id="new-message"
-                    onChange={handleTyping}
-                    borderRadius="10px"
-                  />
-
-                  <InputRightElement>
-                    <Button
-                      onClick={(e) =>
-                        handleSendMessage(
-                          e,
-                          document.getElementById("new-message")?.value
-                        )
-                      }
-                      size="sm"
-                      mx={2}
-                      borderRadius="10px"
-                    >
-                      <ArrowForwardIcon />
-                    </Button>
-                  </InputRightElement>
-                </InputGroup>
-              </FormControl>
-            </Box>
-          </Box>
-          <FileUploadModal
-            isOpen={isOpen}
-            onClose={onClose}
-            handleSendMessage={handleSendMessage}
-          />
-        </>
-      ) : (
-        !isChatLoading && (
-          <Box
-            display={{
-              base: "none",
-              lg: "block",
-            }}
-            mx="auto"
-            w="fit-content"
-            mt="30vh"
-            textAlign="center"
-          >
-            <Text fontSize="6vw" fontWeight="bold" fontFamily="Work sans">
-              Conversa
-            </Text>
-            <Text fontSize="2vw">Online chatting app</Text>
-            <Text fontSize="md">Select a chat to start messaging</Text>
-          </Box>
-        )
-      )}
+      <FileUploadModal
+        isOpen={isOpen}
+        onClose={onClose}
+        handleSendMessage={handleSendMessage}
+      />
     </>
   );
 };

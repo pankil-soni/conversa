@@ -1,27 +1,29 @@
+import { useState } from "react";
 import { Tabs, TabList, TabPanels, Tab, TabPanel } from "@chakra-ui/react";
 import Login from "./Login";
 import Signup from "./Signup";
-import React from "react";
 
-const Auth = (props) => {
-  const [activetab, setactivetab] = React.useState(props.tabindex);
-
-  const handleTabsChange = (index) => {
-    setactivetab(index);
-  };
+const Auth = ({ tabIndex = 0 }) => {
+  const [activeTab, setActiveTab] = useState(tabIndex);
 
   return (
-    <Tabs isFitted variant="enclosed" index={activetab} colorScheme="purple">
+    <Tabs
+      isFitted
+      variant="enclosed"
+      index={activeTab}
+      onChange={setActiveTab}
+      colorScheme="purple"
+    >
       <TabList mb="2em">
-        <Tab onClick={() => handleTabsChange(0)}>Login</Tab>
-        <Tab onClick={() => handleTabsChange(1)}>Sign Up</Tab>
+        <Tab>Login</Tab>
+        <Tab>Sign Up</Tab>
       </TabList>
       <TabPanels>
         <TabPanel p={0}>
-          <Login handleTabsChange={handleTabsChange} />
+          <Login onSwitchTab={setActiveTab} />
         </TabPanel>
-        <TabPanel>
-          <Signup handleTabsChange={handleTabsChange} />
+        <TabPanel p={0}>
+          <Signup onSwitchTab={setActiveTab} />
         </TabPanel>
       </TabPanels>
     </Tabs>

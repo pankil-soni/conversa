@@ -12,29 +12,25 @@ import {
 } from "@chakra-ui/react";
 import { CopyIcon, DeleteIcon, CheckCircleIcon } from "@chakra-ui/icons";
 import DeleteMessageModal from "../miscellaneous/DeleteMessageModal";
+import { emitDeleteMessage } from "../../lib/socket";
+import { formatTime } from "../../lib/utils";
 
 const SingleMessage = ({
   message,
   user,
   receiver,
   markdownToHtml,
-  scrollbarconfig,
-  socket,
+  scrollbarSx,
   activeChatId,
   removeMessageFromList,
   toast,
 }) => {
   const isSender = message.senderId === user._id;
-  const messageTime = `${new Date(message.createdAt).getHours()}:${new Date(
-    message.createdAt
-  ).getMinutes()}`;
-
   const [isHovered, setIsHovered] = useState(false);
-
   const {
-    isOpen: isDeleteModalOpen,
-    onOpen: onOpenDeleteModal,
-    onClose: onCloseDeleteModal,
+    isOpen: isDeleteOpen,
+    onOpen: onDeleteOpen,
+    onClose: onDeleteClose,
   } = useDisclosure();
 
   const handleCopy = () => {
@@ -43,30 +39,25 @@ const SingleMessage = ({
         duration: 1000,
         render: () => (
           <Box color="white" p={3} bg="purple.300" borderRadius="lg">
-            Message copied to clipboard!!
+            Message copied to clipboard!
           </Box>
         ),
       });
     });
   };
 
-  const handleDeleteMessage = async (deletefrom) => {
-    // Remove message from UI
+  const handleDelete = (scope) => {
     removeMessageFromList(message._id);
-    onCloseDeleteModal();
+    onDeleteClose();
 
     const deleteFrom = [user._id];
-    if (deletefrom === 2) {
-      deleteFrom.push(receiver._id);
-    }
+    if (scope === 2) deleteFrom.push(receiver._id);
 
-    const data = {
+    emitDeleteMessage({
       messageId: message._id,
       conversationId: activeChatId,
       deleteFrom,
-    };
-
-    socket.emit("delete-message", data);
+    });
   };
 
   return (
@@ -77,36 +68,24 @@ const SingleMessage = ({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
+        {/* Sender hover controls (left side) */}
         {isSender && isHovered && (
-          <Box margin={2} display="flex">
+          <Flex align="center" mr={1}>
             <Tooltip label="Copy" placement="top">
-              <Button
-                size="sm"
-                variant="ghost"
-                mr={2}
-                onClick={handleCopy}
-                borderRadius="md"
-              >
+              <Button size="sm" variant="ghost" onClick={handleCopy} borderRadius="md">
                 <CopyIcon />
               </Button>
             </Tooltip>
-
             <Tooltip label="Delete" placement="top">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={(e) => {
-                  e.preventDefault();
-                  onOpenDeleteModal();
-                }}
-                borderRadius="md"
-              >
+              <Button size="sm" variant="ghost" onClick={onDeleteOpen} borderRadius="md">
                 <DeleteIcon />
               </Button>
             </Tooltip>
-          </Box>
+          </Flex>
         )}
+
         <Flex w="max-content" position="relative">
+          {/* Receiver avatar */}
           {!isSender && receiver?.profilePic && (
             <Image
               borderRadius="50%"
@@ -120,6 +99,7 @@ const SingleMessage = ({
           )}
 
           <Stack spacing={0} position="relative">
+            {/* Reply indicator */}
             {message.replyto && (
               <Box
                 my={1}
@@ -136,6 +116,7 @@ const SingleMessage = ({
               </Box>
             )}
 
+            {/* Message bubble */}
             <Box
               alignSelf={isSender ? "flex-end" : "flex-start"}
               position="relative"
@@ -150,7 +131,7 @@ const SingleMessage = ({
               {message.imageUrl && (
                 <Image
                   src={message.imageUrl}
-                  alt="loading..."
+                  alt="attachment"
                   w="200px"
                   maxW="40vw"
                   borderRadius="10px"
@@ -158,33 +139,29 @@ const SingleMessage = ({
                 />
               )}
               <Text
-                overflowX="scroll"
-                sx={scrollbarconfig}
+                overflowX="auto"
+                sx={scrollbarSx}
                 dangerouslySetInnerHTML={markdownToHtml(message.text)}
-              ></Text>
+              />
               <Flex justify="end" align="center" mt={1}>
                 <Text align="end" fontSize="10px" color="#e6e5e5">
-                  {messageTime}
+                  {formatTime(message.createdAt)}
                 </Text>
-
                 {isSender &&
-                  message.seenBy?.find(
-                    (element) => element.user === receiver._id
-                  ) && (
+                  message.seenBy?.some((s) => s.user === receiver._id) && (
                     <Circle ml={1} fontSize="x-small" color="green.100">
                       <CheckCircleIcon />
                     </Circle>
                   )}
               </Flex>
 
-              {/* Hover controls */}
+              {/* Receiver hover controls (right side) */}
               {!isSender && isHovered && (
-                <Box position="absolute" top="0" right="-50px" display="flex">
+                <Box position="absolute" top={0} right="-50px" display="flex">
                   <Tooltip label="Copy" placement="top">
                     <Button
                       size="sm"
                       variant="ghost"
-                      mr={2}
                       onClick={handleCopy}
                       borderRadius="md"
                     >
@@ -199,9 +176,9 @@ const SingleMessage = ({
       </Flex>
 
       <DeleteMessageModal
-        isOpen={isDeleteModalOpen}
-        handleDeleteMessage={handleDeleteMessage}
-        onClose={onCloseDeleteModal}
+        isOpen={isDeleteOpen}
+        handleDeleteMessage={handleDelete}
+        onClose={onDeleteClose}
       />
     </>
   );

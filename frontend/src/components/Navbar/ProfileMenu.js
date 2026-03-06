@@ -7,16 +7,16 @@ import {
   MenuList,
   MenuItem,
   Image,
+  useColorMode,
 } from "@chakra-ui/react";
 import { ChevronDownIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import { ProfileModal } from "../miscellaneous/ProfileModal";
-import { useColorMode } from "@chakra-ui/react";
 import chatContext from "../../context/chatContext";
+import { disconnectSocket } from "../../lib/socket";
 
-const ProfileMenu = (props) => {
-  const { toggleColorMode } = useColorMode();
-  const context = useContext(chatContext);
+const ProfileMenu = ({ isOpen, onOpen, onClose }) => {
+  const { colorMode, toggleColorMode } = useColorMode();
   const {
     user,
     setUser,
@@ -24,74 +24,59 @@ const ProfileMenu = (props) => {
     setActiveChatId,
     setMessageList,
     setReceiver,
-    socket,
-  } = context;
-  const navigator = useNavigate();
+  } = useContext(chatContext);
+  const navigate = useNavigate();
 
-  const handleLogout = async (e) => {
-    e.preventDefault();
+  const handleLogout = () => {
     setUser({});
     setMessageList([]);
     setActiveChatId("");
     setReceiver({});
     localStorage.removeItem("user");
     localStorage.removeItem("token");
-    socket.disconnect();
+    disconnectSocket();
     setIsAuthenticated(false);
-    console.log("logout");
-    navigator("/");
+    navigate("/");
   };
+
   return (
     <>
       <Menu>
-        {
-          <>
-            <MenuButton
-              isActive={props.isOpen}
-              as={Button}
-              rightIcon={<ChevronDownIcon />}
-              leftIcon={
-                <Image
-                  boxSize="26px"
-                  borderRadius="full"
-                  src={user.profilePic}
-                  alt="profile-pic"
-                />
-              }
-            >
-              <Text
-                display={{
-                  base: "none",
-                  lg: "block",
-                }}
-                fontSize={"13px"}
-              >
-                {user.name}
-              </Text>
-            </MenuButton>
-            <MenuList>
-              <MenuItem onClick={props.onOpen}>MyProfile</MenuItem>
-              <MenuItem
-                display={{
-                  base: "block",
-                  lg: "none",
-                }}
-                onClick={toggleColorMode}
-              >
-                {localStorage.getItem("chakra-ui-color-mode") === "light"
-                  ? "Dark Mode"
-                  : "Light Mode"}
-              </MenuItem>
-              <MenuItem color={"red"} onClick={handleLogout}>
-                Logout
-              </MenuItem>
-            </MenuList>
-          </>
-        }
+        <MenuButton
+          isActive={isOpen}
+          as={Button}
+          rightIcon={<ChevronDownIcon />}
+          leftIcon={
+            <Image
+              boxSize="26px"
+              borderRadius="full"
+              src={user.profilePic}
+              alt="profile-pic"
+            />
+          }
+        >
+          <Text display={{ base: "none", lg: "block" }} fontSize="13px">
+            {user.name}
+          </Text>
+        </MenuButton>
+
+        <MenuList>
+          <MenuItem onClick={onOpen}>My Profile</MenuItem>
+          <MenuItem
+            display={{ base: "block", lg: "none" }}
+            onClick={toggleColorMode}
+          >
+            {colorMode === "light" ? "Dark Mode" : "Light Mode"}
+          </MenuItem>
+          <MenuItem color="red.500" onClick={handleLogout}>
+            Logout
+          </MenuItem>
+        </MenuList>
       </Menu>
+
       <ProfileModal
-        isOpen={props.isOpen}
-        onClose={props.onClose}
+        isOpen={isOpen}
+        onClose={onClose}
         user={user}
         setUser={setUser}
       />

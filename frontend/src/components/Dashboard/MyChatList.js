@@ -1,4 +1,4 @@
-import React from "react";
+import { useEffect, useContext, useRef, useCallback } from "react";
 import {
   Box,
   Button,
@@ -10,47 +10,34 @@ import {
   InputLeftElement,
   Circle,
   Stack,
-  Spinner,
+  Skeleton,
+  SkeletonCircle,
+  useToast,
+  useDisclosure,
+  useColorMode,
 } from "@chakra-ui/react";
-import { useState } from "react";
-import { useEffect } from "react";
-import { useContext } from "react";
-import chatContext from "../../context/chatContext";
 import { AddIcon, Search2Icon } from "@chakra-ui/icons";
-import { useToast } from "@chakra-ui/react";
+import chatContext from "../../context/chatContext";
 import ProfileMenu from "../Navbar/ProfileMenu";
-import { useDisclosure } from "@chakra-ui/react";
 import NewMessage from "../miscellaneous/NewMessage";
-import wavFile from "../../assets/newmessage.wav";
 import { ProfileModal } from "../miscellaneous/ProfileModal";
+import { messageApi } from "../../lib/api";
+import socket from "../../lib/socket";
+import {
+  emitJoinChat,
+  emitLeaveChat,
+  emitStopTyping,
+} from "../../lib/socket";
+import { scrollbarSx, formatDateLabel, formatTime } from "../../lib/utils";
+import wavFile from "../../assets/newmessage.wav";
 
-const scrollbarconfig = {
-  "&::-webkit-scrollbar": {
-    width: "5px",
-    height: "5px",
-  },
-  "&::-webkit-scrollbar-thumb": {
-    backgroundColor: "gray.300",
-    borderRadius: "5px",
-  },
-  "&::-webkit-scrollbar-thumb:hover": {
-    backgroundColor: "gray.400",
-  },
-  "&::-webkit-scrollbar-track": {
-    display: "none",
-  },
-};
-
-const MyChatList = (props) => {
-  var sound = new Audio(wavFile);
+const MyChatList = ({ setActiveTab }) => {
+  const soundRef = useRef(new Audio(wavFile));
   const toast = useToast();
-  const context = useContext(chatContext);
   const {
-    hostName,
     user,
-    socket,
-    myChatList: chatlist,
-    originalChatList: data,
+    myChatList: chatList,
+    originalChatList,
     activeChatId,
     setActiveChatId,
     setMyChatList,
@@ -60,315 +47,260 @@ const MyChatList = (props) => {
     setReceiver,
     isLoading,
     isOtherUserTyping,
-  } = context;
+    typingConversations,
+  } = useContext(chatContext);
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const messageInputRef = useRef(null);
+  const { colorMode } = useColorMode();
 
+  /* ─── new-message-notification listener ──────────────────────────────── */
   useEffect(() => {
-    socket.on("new-message-notification", async (data) => {
-      var newlist = chatlist;
+    const onNotification = (data) => {
+      setMyChatList((prev) => {
+        let list = [...prev];
+        let idx = list.findIndex((c) => c._id === data.message.conversationId);
 
-      let chatIndex = newlist.findIndex(
-        (chat) => chat._id === data.conversationId
-      );
-      if (chatIndex === -1) {
-        newlist.unshift(data.conversation);
-      }
-      chatIndex = newlist.findIndex((chat) => chat._id === data.conversationId);
-      newlist[chatIndex].latestmessage = data.text;
-
-      if (activeChatId !== data.conversationId) {
-        newlist[chatIndex].unreadCounts = newlist[chatIndex].unreadCounts.map(
-          (unread) => {
-            if (unread.userId === user._id) {
-              unread.count = unread.count + 1;
-            }
-            return unread;
+        if (idx === -1) {
+          // Guard: only add if the conversation object is valid (the backend
+          // should always send it, but protect against serialisation edge-cases)
+          if (!data.conversation) return prev;
+          list.unshift(data.conversation);
+          idx = 0;
+        } else {
+          list[idx] = { ...list[idx], latestmessage: data.message.text };
+          if (activeChatId !== data.message.conversationId) {
+            list[idx] = {
+              ...list[idx],
+              unreadCounts: list[idx].unreadCounts.map((u) =>
+                u.userId === user._id ? { ...u, count: u.count + 1 } : u
+              ),
+              updatedAt: new Date().toISOString(),
+            };
           }
-        );
-        newlist[chatIndex].updatedAt = new Date();
-      }
+          const [moved] = list.splice(idx, 1);
+          list.unshift(moved);
+        }
+        return list;
+      });
 
-      // If you want to move the updated chat to the beginning of the list
-      let updatedChat = newlist.splice(chatIndex, 1)[0];
-      newlist.unshift(updatedChat);
-
-      setMyChatList([...newlist]); // Create a new array to update state
-
-      //find the name of person who sent the message
-      let sender = newlist.find((chat) => chat._id === data.conversationId)
-        .members[0];
-
-      activeChatId !== data.conversationId &&
-        sound.play().catch((error) => {
-          console.log(error);
-        });
-
-      activeChatId !== data.conversationId &&
+      if (activeChatId !== data.message.conversationId) {
+        soundRef.current.play().catch(() => { });
         toast({
-          // title: "New Message",
-          // description: data.text,
           status: "success",
           duration: 5000,
           position: "top-right",
-
           render: () => (
             <NewMessage
-              sender={sender}
               data={data}
               handleChatOpen={handleChatOpen}
             />
           ),
         });
-    });
-
-    return () => {
-      socket.off("new-message-notification");
+      }
     };
-  });
 
-  const [squery, setsquery] = useState("");
+    socket.on("new-message-notification", onNotification);
+    return () => {
+      socket.off("new-message-notification", onNotification);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId, user._id]);
 
-  const handleUserSearch = async (e) => {
-    if (e.target.value !== "") {
-      setsquery(e.target.value.toLowerCase());
-      const newchatlist = data.filter((chat) =>
-        chat.members[0].name.toLowerCase().includes(squery)
+  /* ─── search ─────────────────────────────────────────────────────────── */
+  const handleSearch = useCallback(
+    (e) => {
+      const q = e.target.value.toLowerCase();
+      if (!q) {
+        setMyChatList(originalChatList);
+        return;
+      }
+      setMyChatList(
+        originalChatList.filter((c) =>
+          c.members[0]?.name?.toLowerCase().includes(q)
+        )
       );
-      setMyChatList(newchatlist);
-    } else {
-      setMyChatList(context.originalChatList);
-    }
-  };
+    },
+    [originalChatList, setMyChatList]
+  );
 
-  const handleChatOpen = async (chatid, receiver) => {
-    try {
-      setIsChatLoading(true);
-      setMessageList([]);
-      setIsOtherUserTyping(false);
-      const msg = document.getElementById("new-message");
-      if (msg) {
-        document.getElementById("new-message").value = "";
-        document.getElementById("new-message").focus();
-      }
+  /* ─── open a chat ────────────────────────────────────────────────────── */
+  const handleChatOpen = useCallback(
+    async (chatId, receiver) => {
+      try {
+        setIsChatLoading(true);
+        setMessageList([]);
+        setIsOtherUserTyping(false);
 
-      setIsOtherUserTyping(false);
-      await socket.emit("stop-typing", {
-        typer: user._id,
-        conversationId: activeChatId,
-      });
-      await socket.emit("leave-chat", activeChatId);
-
-      socket.emit("join-chat", { roomId: chatid });
-      setActiveChatId(chatid);
-
-      const response = await fetch(`${hostName}/message/${chatid}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "auth-token": localStorage.getItem("token"),
-        },
-      });
-      if (!response.ok) {
-        throw new Error("Failed to fetch data");
-      }
-      const jsonData = await response.json();
-
-      setMessageList(jsonData);
-      setReceiver(receiver);
-      setIsChatLoading(false);
-
-      const newlist = chatlist.map((chat) => {
-        if (chat._id === chatid) {
-          chat.unreadCounts = chat.unreadCounts.map((unread) => {
-            if (unread.userId === user._id) {
-              unread.count = 0;
-            }
-            return unread;
-          });
+        // Leave previous room
+        if (activeChatId) {
+          emitStopTyping({ typer: user._id, conversationId: activeChatId });
+          emitLeaveChat(activeChatId);
         }
-        return chat;
-      });
 
-      setMyChatList(newlist);
+        // Join new room
+        emitJoinChat(chatId);
+        setActiveChatId(chatId);
 
-      setTimeout(() => {
-        document.getElementById("chat-box")?.scrollTo({
-          top: document.getElementById("chat-box").scrollHeight,
-          // behavior: "smooth",
-        });
-      }, 100);
-    } catch (error) {
-      console.log(error);
-    }
-  };
+        const messages = await messageApi.list(chatId);
+        setMessageList(messages);
+        setReceiver(receiver);
+        setIsChatLoading(false);
 
-  return !isLoading ? (
+        // Clear unread count for this chat
+        setMyChatList((prev) =>
+          prev.map((c) =>
+            c._id === chatId
+              ? {
+                ...c,
+                unreadCounts: c.unreadCounts.map((u) =>
+                  u.userId === user._id ? { ...u, count: 0 } : u
+                ),
+              }
+              : c
+          )
+        );
+
+        // Focus message input
+        setTimeout(() => messageInputRef.current?.focus(), 100);
+      } catch (err) {
+        console.error("Failed to open chat:", err);
+        setIsChatLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeChatId, user._id]
+  );
+
+  /* ─── render ─────────────────────────────────────────────────────────── */
+  if (isLoading) {
+    return (
+      <Box flex={1} p={3} overflow="hidden">
+        {/* Header */}
+        <Flex justify="space-between" align="center" mb={3}>
+          <Skeleton height="28px" width="70px" borderRadius="md" />
+          <Skeleton height="36px" width="150px" borderRadius="md" />
+        </Flex>
+        <Skeleton height="1px" mb={3} />
+        <Skeleton height="36px" borderRadius="md" mb={4} />
+        {/* Chat-list rows */}
+        <Stack spacing={1}>
+          {Array.from({ length: 9 }).map((_, i) => (
+            <Flex key={i} align="center" px={2} py={3} borderRadius="lg">
+              <SkeletonCircle size="10" flexShrink={0} />
+              <Box ml={3} flex={1} overflow="hidden">
+                <Skeleton height="15px" width={`${55 + (i % 3) * 10}%`} mb={2} borderRadius="md" />
+                <Skeleton height="12px" width={`${40 + (i % 4) * 8}%`} borderRadius="md" />
+              </Box>
+              <Stack ml={3} spacing={1} align="flex-end" flexShrink={0}>
+                <Skeleton height="10px" width="32px" borderRadius="md" />
+                <Skeleton height="10px" width="24px" borderRadius="md" />
+              </Stack>
+            </Flex>
+          ))}
+        </Stack>
+      </Box>
+    );
+  }
+
+  return (
     <>
-      <Box
-        display={"flex"}
-        justifyContent={"space-between"}
-        flexDir={"column"}
-        mt={1}
-        h={"100%"}
-      >
-        <Flex zIndex={1} justify={"space-between"}>
-          <Text mb={"10px"} fontWeight={"bold"} fontSize={"2xl"}>
+      <Flex direction="column" flex={1} overflow="hidden" mt={1}>
+        {/* Header */}
+        <Flex justify="space-between" align="center" flexShrink={0}>
+          <Text fontWeight="bold" fontSize="2xl">
             Chats
           </Text>
-
-          <Flex>
-            <InputGroup w={{ base: "fit-content", lg: "fit-content" }} mx={2}>
+          <Flex align="center" gap={2}>
+            <InputGroup w="auto">
               <InputLeftElement pointerEvents="none">
                 <Search2Icon color="gray.300" />
               </InputLeftElement>
               <Input
                 type="text"
-                placeholder="search user"
-                onChange={handleUserSearch}
-                id="search-input"
+                placeholder="Search user"
+                onChange={handleSearch}
               />
             </InputGroup>
-
-            <Box minW={"fit-content"} display={{ base: "block", lg: "none" }}>
-              <ProfileMenu
-                user={user}
-                isOpen={isOpen}
-                onOpen={onOpen}
-                onClose={onClose}
-              />
+            <Box display={{ base: "block", lg: "none" }}>
+              <ProfileMenu isOpen={isOpen} onOpen={onOpen} onClose={onClose} />
             </Box>
           </Flex>
         </Flex>
 
-        <Divider my={1} />
+        <Divider my={2} />
 
         <Button
-          m={2}
+          mx={2}
+          my={1}
+          flexShrink={0}
           colorScheme="purple"
-          onClick={() => props.setactiveTab(1)}
+          onClick={() => setActiveTab(1)}
         >
-          Add new Chat <AddIcon ml={2} fontSize={"12px"} />
+          Add new Chat <AddIcon ml={2} fontSize="12px" />
         </Button>
 
-        <Box h={"100%"} px={2} flex={1} overflowY={"auto"} sx={scrollbarconfig}>
-          {chatlist.map((chat) => (
-            <Flex
-              key={chat.members[0]._id}
-              my={2}
-              justify={"space-between"}
-              align={"center"}
-              w={"100%"}
-              overflow={"hidden"}
-            >
-              <Button
-                h={"4em"}
-                w={"100%"}
-                justifyContent={"space-between"}
-                onClick={() => handleChatOpen(chat._id, chat.members[0])}
-                colorScheme={chat._id === activeChatId ? "purple" : "gray"}
-              >
-                <Flex>
-                  <Box>
+        {/* Chat list */}
+        <Box flex={1} overflowY="auto" px={2} sx={scrollbarSx}>
+          {chatList.map((chat) => {
+            const member = chat.members[0];
+            const unread =
+              chat.unreadCounts?.find((u) => u.userId === user._id)?.count || 0;
+
+            return (
+              <Flex key={chat._id} my={2}>
+                <Button
+                  h="4em"
+                  w="100%"
+                  justifyContent="space-between"
+                  onClick={() => handleChatOpen(chat._id, member)}
+                  colorScheme={chat._id === activeChatId ? "purple" : "gray"}
+                >
+                  <Flex align="center" overflow="hidden">
                     <img
-                      src={
-                        chat.members[0].profilePic ||
-                        "https://via.placeholder.com/150"
-                      }
+                      src={member?.profilePic || "https://via.placeholder.com/150"}
                       alt="profile"
                       style={{
-                        width: "40px",
-                        height: "40px",
+                        width: 40,
+                        height: 40,
                         borderRadius: "50%",
+                        flexShrink: 0,
                       }}
                     />
-                  </Box>
-                  <Box ml={3} w={"50%"} textAlign={"left"}>
-                    <Text
-                      textOverflow={"hidden"}
-                      fontSize={"lg"}
-                      fontWeight={"bold"}
-                    >
-                      {chat.members[0].name?.length > 11
-                        ? chat.members[0].name?.substring(0, 13) + "..."
-                        : chat.members[0].name}
-                    </Text>
-                    {isOtherUserTyping && chat._id === activeChatId ? (
-                      <Text fontSize={"sm"} color={"purple.100"}>
-                        typing...
+                    <Box ml={3} textAlign="left" overflow="hidden">
+                      <Text fontSize="lg" fontWeight="bold" isTruncated>
+                        {member?.name}
                       </Text>
-                    ) : (
-                      <Text fontSize={"sm"} color={"gray.400"}>
-                        {chat.latestmessage?.substring(0, 15) +
-                          (chat.latestmessage?.length > 15 ? "..." : "")}
-                      </Text>
-                    )}
-                  </Box>
-                </Flex>
+                      {(typingConversations[chat._id] || (isOtherUserTyping && chat._id === activeChatId)) ? (
+                        <Text fontSize="sm" color={colorMode === "light" ? (chat._id === activeChatId ? "gray.200" : "gray.500") : (chat._id === activeChatId ? "gray.700" : "gray.400")} isTruncated>
+                          typing...
+                        </Text>
+                      ) : (
+                        <Text fontSize="sm" color={colorMode === "light" ? (chat._id === activeChatId ? "gray.200" : "gray.500") : (chat._id === activeChatId ? "gray.700" : "gray.400")} isTruncated>
+                          {chat.latestmessage}
+                        </Text>
+                      )}
+                    </Box>
+                  </Flex>
 
-                <Stack direction={"row"} align={"center"}>
-                  <Box textAlign={"right"} fontSize={"x-small"}>
-                    {new Date(chat.updatedAt).toDateString() ===
-                    new Date().toDateString() ? (
-                      <Text mb={1} fontSize={"x-small"}>
-                        Today
-                      </Text>
-                    ) : new Date(chat.updatedAt).toDateString() ===
-                      new Date(
-                        new Date().setDate(new Date().getDate() - 1)
-                      ).toDateString() ? (
-                      <Text mb={1} fontSize={"x-small"}>
-                        Yesterday
-                      </Text>
-                    ) : (
-                      <Text mb={1} fontSize={"x-small"}>
-                        {new Date(chat.updatedAt).toLocaleDateString()}
-                      </Text>
+                  <Stack direction="row" align="center" flexShrink={0} ml={2}>
+                    <Box textAlign="right" fontSize="x-small">
+                      <Text mb={1}>{formatDateLabel(chat.updatedAt)}</Text>
+                      <Text>{formatTime(chat.updatedAt)}</Text>
+                    </Box>
+                    {unread > 0 && (
+                      <Circle bg="black" color="white" size="20px" p={1}>
+                        <Text fontSize={12}>{unread}</Text>
+                      </Circle>
                     )}
-                    {new Date(chat.updatedAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </Box>
-
-                  {chat.unreadCounts.find(
-                    (unread) => unread.userId === user._id
-                  )?.count > 0 && (
-                    <Circle
-                      backgroundColor={"black"}
-                      color={"white"}
-                      p={1}
-                      borderRadius={40}
-                      size={"20px"}
-                    >
-                      <Text fontSize={12} p={1} borderRadius={50}>
-                        &nbsp;
-                        {
-                          chat.unreadCounts.find(
-                            (unread) => unread.userId === user._id
-                          )?.count
-                        }
-                        &nbsp;
-                      </Text>
-                    </Circle>
-                  )}
-                </Stack>
-              </Button>
-            </Flex>
-          ))}
+                  </Stack>
+                </Button>
+              </Flex>
+            );
+          })}
         </Box>
-        <ProfileModal
-          isOpen={isOpen}
-          onClose={onClose}
-          onOpen={onOpen}
-          user={user}
-        />
-      </Box>
-    </>
-  ) : (
-    <>
-      <Box margin={"auto"} w={"max-content"} mt={"30vh"}>
-        <Spinner size={"xl"} />
-      </Box>
+      </Flex>
+
+      <ProfileModal isOpen={isOpen} onClose={onClose} user={user} />
     </>
   );
 };

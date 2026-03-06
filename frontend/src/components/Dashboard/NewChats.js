@@ -1,6 +1,4 @@
-import React from "react";
-import { useEffect } from "react";
-import { useState } from "react";
+import { useEffect, useState, useContext, useCallback } from "react";
 import {
   Box,
   Divider,
@@ -11,184 +9,113 @@ import {
   Text,
   Button,
 } from "@chakra-ui/react";
-import {
-  AddIcon,
-  ArrowBackIcon,
-  ChevronRightIcon,
-  Search2Icon,
-} from "@chakra-ui/icons";
-import { useContext } from "react";
+import { ArrowBackIcon, ChevronRightIcon, Search2Icon } from "@chakra-ui/icons";
 import chatContext from "../../context/chatContext";
+import { userApi, conversationApi } from "../../lib/api";
+import { emitJoinChat } from "../../lib/socket";
+import { scrollbarSx } from "../../lib/utils";
 
-const NewChats = (props) => {
-  const [data, setData] = useState([]);
-  const [users, setUsers] = useState(data);
-  const context = useContext(chatContext);
+const NewChats = ({ setActiveTab }) => {
+  const [allUsers, setAllUsers] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const {
-    hostName,
-    socket,
     user,
     myChatList,
     setMyChatList,
     setReceiver,
     setActiveChatId,
-  } = context;
+  } = useContext(chatContext);
 
-  const fetchNonFriendsList = async () => {
+  /* ─── fetch non-friends whenever chat list changes ───────────────────── */
+  const fetchNonFriends = useCallback(async () => {
     try {
-      const response = await fetch(`${hostName}/user/non-friends`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "auth-token": localStorage.getItem("token"),
-        },
-      });
-      if (!response.ok) {
-        throw new Error("Failed to fetch data");
-      }
-      const jsonData = await response.json();
-      setData(jsonData);
-      setUsers(jsonData);
-    } catch (error) {
-      console.log(error);
+      const data = await userApi.getNonFriends();
+      setAllUsers(data);
+      setFiltered(data);
+    } catch (err) {
+      console.error("Failed to fetch non-friends:", err);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    async function fetchList() {
-      await fetchNonFriendsList();
-    }
-    fetchList();
-  }, [myChatList]);
+    fetchNonFriends();
+  }, [myChatList, fetchNonFriends]);
 
-  const handleUserSearch = async (e) => {
-    if (e.target.value !== "") {
-      const newusers = data.filter((user) =>
-        user.name.toLowerCase().includes(e.target.value.toLowerCase())
-      );
-      setUsers(newusers);
-    } else {
-      setUsers(data);
-    }
+  /* ─── search ─────────────────────────────────────────────────────────── */
+  const handleSearch = (e) => {
+    const q = e.target.value.toLowerCase();
+    if (!q) return setFiltered(allUsers);
+    setFiltered(allUsers.filter((u) => u.name.toLowerCase().includes(q)));
   };
 
-  const handleNewChat = async (e, receiverid) => {
-    e.preventDefault();
-    const payload = { members: [user._id, receiverid] };
+  /* ─── create new conversation ────────────────────────────────────────── */
+  const handleNewChat = async (receiverId) => {
     try {
-      const response = await fetch(`${hostName}/conversation/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "auth-token": localStorage.getItem("token"),
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch data");
-      }
-      const data = await response.json();
-
-      setMyChatList([data, ...myChatList]);
+      const data = await conversationApi.create([user._id, receiverId]);
+      setMyChatList((prev) => [data, ...prev]);
       setReceiver(data.members[0]);
       setActiveChatId(data._id);
-      props.setactiveTab(0);
-
-      socket.emit("join-chat", {
-        roomId: data._id,
-      });
-
-      setUsers((users) => users.filter((user) => user._id !== receiverid));
-    } catch (error) {
-      console.log(error);
+      emitJoinChat(data._id);
+      setActiveTab(0);
+      setFiltered((prev) => prev.filter((u) => u._id !== receiverId));
+    } catch (err) {
+      console.error("Failed to create chat:", err);
     }
   };
 
   return (
-    <>
-      <Box>
-        <Flex justify={"space-between"}>
-          <Button onClick={() => props.setactiveTab(0)}>
-            <ArrowBackIcon />
-          </Button>
-
-          <Box display={"flex"}>
-            <InputGroup w={"fit-content"} mx={2}>
-              <InputLeftElement pointerEvents="none">
-                <Search2Icon color="gray.300" />
-              </InputLeftElement>
-              <Input
-                type="text"
-                placeholder="Enter Name"
-                onChange={handleUserSearch}
-                id="search-input"
-              />
-            </InputGroup>
-          </Box>
-        </Flex>
-      </Box>
+    <Flex direction="column" flex={1} overflow="hidden">
+      {/* Header */}
+      <Flex justify="space-between" align="center" flexShrink={0} px={2} pt={1}>
+        <Button onClick={() => setActiveTab(0)}>
+          <ArrowBackIcon />
+        </Button>
+        <InputGroup w="auto">
+          <InputLeftElement pointerEvents="none">
+            <Search2Icon color="gray.300" />
+          </InputLeftElement>
+          <Input type="text" placeholder="Enter name" onChange={handleSearch} />
+        </InputGroup>
+      </Flex>
 
       <Divider my={2} />
 
-      <Box
-        h={{ base: "63vh", lg: "72vh" }}
-        overflowY={"scroll"}
-        sx={{
-          "::-webkit-scrollbar": {
-            width: "4px",
-          },
-          "::-webkit-scrollbar-track": {
-            width: "6px",
-          },
-          "::-webkit-scrollbar-thumb": {
-            background: { base: "gray.300", lg: "gray.500" },
-            borderRadius: "24px",
-          },
-        }}
-      >
-        {users.map(
-          (user) =>
-            user._id !== context.user._id && (
-              <Flex key={user._id} p={2}>
-                <Button
-                  h={"4em"}
-                  w={"100%"}
-                  justifyContent={"space-between"}
-                  onClick={(e) => handleNewChat(e, user._id)}
-                >
-                  <Flex>
-                    <Box>
-                      <img
-                        src={user.profilePic}
-                        alt="profile"
-                        style={{
-                          width: "40px",
-                          height: "40px",
-                          borderRadius: "50%",
-                        }}
-                      />
-                    </Box>
-                    <Box mx={3} textAlign={"start"}>
-                      <Text fontSize={"lg"} fontWeight={"bold"}>
-                        {user.name}
-                      </Text>
-                    </Box>
-                  </Flex>
+      {/* User list */}
+      <Box flex={1} overflowY="auto" sx={scrollbarSx}>
+        {filtered
+          .filter((u) => u._id !== user._id)
+          .map((u) => (
+            <Flex key={u._id} p={2}>
+              <Button
+                h="4em"
+                w="100%"
+                justifyContent="space-between"
+                onClick={() => handleNewChat(u._id)}
+              >
+                <Flex align="center">
+                  <img
+                    src={u.profilePic}
+                    alt="profile"
+                    style={{ width: 40, height: 40, borderRadius: "50%" }}
+                  />
+                  <Box mx={3} textAlign="start">
+                    <Text fontSize="lg" fontWeight="bold">
+                      {u.name}
+                    </Text>
+                  </Box>
+                </Flex>
+                <ChevronRightIcon />
+              </Button>
+            </Flex>
+          ))}
 
-                  <ChevronRightIcon />
-                </Button>
-              </Flex>
-            )
-        )}
-
-        {users.length === 0 && (
-          <Text textAlign={"center"} color={"gray.500"} mt={4}>
+        {filtered.length === 0 && (
+          <Text textAlign="center" color="gray.500" mt={4}>
             No Other Users Found
           </Text>
         )}
       </Box>
-    </>
+    </Flex>
   );
 };
 
