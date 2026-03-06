@@ -16,7 +16,7 @@ const createConversation = async (req, res) => {
 
     if (conv) {
       conv.members = conv.members.filter(
-        (memberId) => memberId !== req.user.id
+        (member) => member._id.toString() !== req.user.id
       );
       return res.status(200).json(conv);
     }
