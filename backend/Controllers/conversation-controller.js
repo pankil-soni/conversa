@@ -1,5 +1,34 @@
 const Conversation = require("../Models/Conversation.js");
 
+/**
+ * Sanitizes a populated member document when viewed by someone whom that
+ * member has blocked. Profile fields become generic placeholders; only the
+ * _id and email remain untouched (per product spec).
+ * The `blockedUsers` array is always stripped from the output.
+ */
+function sanitizeForRequester(member, requesterId) {
+  const obj = member.toObject ? member.toObject() : { ...member };
+  const isBlocked = obj.blockedUsers?.some(
+    (id) => id.toString() === requesterId.toString()
+  );
+  delete obj.blockedUsers; // never expose blockedUsers list to clients
+
+  if (!isBlocked) return obj;
+
+  return {
+    _id: obj._id,
+    email: obj.email, // email is intentionally NOT sanitized
+    name: "Conversa User",
+    about: "",
+    profilePic: "https://ui-avatars.com/api/?name=Conversa+User&background=6366f1&color=fff&bold=true",
+    isOnline: false,
+    lastSeen: null,
+    isBot: obj.isBot,
+    createdAt: null,
+    updatedAt: null,
+  };
+}
+
 const createConversation = async (req, res) => {
   try {
     const { members: memberIds } = req.body;
@@ -15,10 +44,11 @@ const createConversation = async (req, res) => {
     }).populate("members", "-password");
 
     if (conv) {
-      conv.members = conv.members.filter(
-        (member) => member._id.toString() !== req.user.id
-      );
-      return res.status(200).json(conv);
+      const sanitizedConv = conv.toObject();
+      sanitizedConv.members = conv.members
+        .filter((member) => member._id.toString() !== req.user.id)
+        .map((member) => sanitizeForRequester(member, req.user.id));
+      return res.status(200).json(sanitizedConv);
     }
 
     const newConversation = await Conversation.create({
@@ -31,11 +61,12 @@ const createConversation = async (req, res) => {
 
     await newConversation.populate("members", "-password");
 
-    newConversation.members = newConversation.members.filter(
-      (member) => member.id !== req.user.id
-    );
+    const sanitizedNew = newConversation.toObject();
+    sanitizedNew.members = newConversation.members
+      .filter((member) => member._id.toString() !== req.user.id)
+      .map((member) => sanitizeForRequester(member, req.user.id));
 
-    return res.status(200).json(newConversation);
+    return res.status(200).json(sanitizedNew);
   } catch (error) {
     console.log(error);
     return res.status(500).send("Internal Server Error");
@@ -63,7 +94,11 @@ const getConversation = async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    res.status(200).json(conversation);
+    const sanitized = conversation.toObject();
+    sanitized.members = conversation.members.map((m) =>
+      sanitizeForRequester(m, req.user.id)
+    );
+    res.status(200).json(sanitized);
   } catch (error) {
     res.status(500).send("Internal Server Error");
   }
@@ -85,11 +120,13 @@ const getConversationList = async (req, res) => {
       });
     }
 
-    // remove user from members and also other chatbots
+    // remove current user from members, sanitize blocked profiles
     for (let i = 0; i < conversationList.length; i++) {
-      conversationList[i].members = conversationList[i].members.filter(
-        (member) => member.id !== userId
-      );
+      const conv = conversationList[i].toObject();
+      conv.members = conversationList[i].members
+        .filter((member) => member.id !== userId)
+        .map((member) => sanitizeForRequester(member, userId));
+      conversationList[i] = conv;
     }
 
     res.status(200).json(conversationList);

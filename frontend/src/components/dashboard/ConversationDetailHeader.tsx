@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, MoreVertical, Bot, Trash2, CheckCircle } from "lucide-react"
+import { ArrowLeft, MoreVertical, Bot, Trash2, CheckCircle, Ban } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -33,6 +33,9 @@ interface Props {
     receiver: User | null
     onClearChat: () => void
     onSelectMode: () => void
+    isBlockedByMe: boolean
+    onBlock: () => void
+    onUnblock: () => void
 }
 
 function initials(name: string) {
@@ -54,7 +57,7 @@ function lastSeenText(receiver: User | null): string {
     return `Last seen ${new Date(receiver.lastSeen).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
 }
 
-export default function ConversationDetailHeader({ receiver, onClearChat, onSelectMode }: Props) {
+export default function ConversationDetailHeader({ receiver, onClearChat, onSelectMode, isBlockedByMe, onBlock, onUnblock }: Props) {
     const navigate = useNavigate()
     const [profileOpen, setProfileOpen] = useState(false)
     const [clearOpen, setClearOpen] = useState(false)
@@ -110,7 +113,22 @@ export default function ConversationDetailHeader({ receiver, onClearChat, onSele
                         <DropdownMenuItem onClick={onSelectMode}>
                             <CheckCircle className="size-4" />
                             Select messages
-                        </DropdownMenuItem>                        <DropdownMenuSeparator />
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {!receiver?.isBot && (
+                            isBlockedByMe ? (
+                                <DropdownMenuItem onClick={onUnblock}>
+                                    <Ban className="size-4" />
+                                    Unblock user
+                                </DropdownMenuItem>
+                            ) : (
+                                <DropdownMenuItem onClick={onBlock} variant="destructive">
+                                    <Ban className="size-4" />
+                                    Block user
+                                </DropdownMenuItem>
+                            )
+                        )}
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
                             onClick={() => setClearOpen(true)}
                             variant="destructive"

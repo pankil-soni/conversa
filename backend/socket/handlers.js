@@ -182,6 +182,24 @@ module.exports = (io, socket, userSocketMap) => {
 
       const receiverId = receiverMember._id;
 
+      // ── Block check ───────────────────────────────────────────────────────
+      // Prevent sending if (a) the receiver has blocked the sender, or
+      // (b) the sender has blocked the receiver.
+      const [receiverDoc, senderDoc] = await Promise.all([
+        User.findById(receiverId, "blockedUsers"),
+        User.findById(senderId, "blockedUsers"),
+      ]);
+      const isBlockedByReceiver = receiverDoc?.blockedUsers?.some(
+        (id) => id.toString() === senderId
+      );
+      const senderBlockedReceiver = senderDoc?.blockedUsers?.some(
+        (id) => id.toString() === receiverId.toString()
+      );
+      if (isBlockedByReceiver || senderBlockedReceiver) {
+        socket.emit("message-blocked", { conversationId });
+        return;
+      }
+
       // Determine if the receiver currently has the conversation room open.
       // Check ALL of the receiver's sockets so multi-device is handled correctly.
       const receiverSocketIds = userSocketMap.get(receiverId.toString());

@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { Search, MessageCircle, Bot, SquarePen } from "lucide-react"
+import { Search, MessageCircle, Bot, SquarePen, ChevronDown, Trash2, Ban } from "lucide-react"
 import { useConversations, type Conversation } from "@/hooks/use-conversation"
 import { useAuth } from "@/hooks/use-auth"
 import { useChat } from "@/hooks/use-chat"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { userApi, messageApi } from "@/lib/api"
+import { toast } from "sonner"
 import socket from "@/lib/socket"
 import type { User } from "@/hooks/use-auth"
 import { Button } from "../ui/button"
@@ -60,69 +69,121 @@ interface RowProps {
     isActive: boolean
     isTyping: boolean
     onClick: () => void
+    openDropdownId: string | null
+    setOpenDropdownId: (id: string | null) => void
+    onToggleBlock: (userId: string, userName: string, isBlocked: boolean) => Promise<void>
+    onClearChat: (convId: string) => Promise<void>
+    blockedUsers: Set<string>
 }
 
-function ConversationRow({ conv, myId, isActive, isTyping, onClick }: RowProps) {
+function ConversationRow({ conv, myId, isActive, isTyping, onClick, openDropdownId, setOpenDropdownId, onToggleBlock, onClearChat, blockedUsers }: RowProps) {
     const other = getOtherMember(conv, myId)
     const unread = conv.unreadCounts.find((u) => u.userId === myId)?.count ?? 0
     const name = other?.name ?? "Unknown"
     const preview = isTyping
         ? "typing…"
         : conv.latestmessage || "Start a conversation"
+    const dropdownOpen = openDropdownId === conv._id
+    const isBlocked = other ? blockedUsers.has(other._id) : false
 
     return (
-        <button
-            onClick={onClick}
-            className={cn(
-                "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left transition-colors",
-                isActive
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "hover:bg-sidebar-accent/60"
-            )}
-        >
-            {/* avatar */}
-            <div className="relative shrink-0">
-                <Avatar className="size-10">
-                    <AvatarImage src={other?.profilePic} alt={name} />
-                    <AvatarFallback className="bg-primary/15  text-xs font-semibold">
-                        {other?.isBot ? <Bot className="size-4" /> : initials(name)}
-                    </AvatarFallback>
-                </Avatar>
-                {/* online dot */}
-                {(other?.isBot || other?.isOnline) && (
-                    <span className="absolute bottom-0 right-0 size-2.5 rounded-full bg-green-500 ring-2 ring-sidebar" />
-                )}
-            </div>
-
-            {/* text */}
-            <div className="flex-1 min-w-0">
-                <div className="flex items-baseline justify-between gap-1">
-                    <span className="truncate text-sm font-medium leading-tight">{name}</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {relativeTime(conv.updatedAt)}
-                    </span>
-                </div>
-                <div className="flex items-center justify-between gap-1 mt-0.5">
-                    <p
-                        className={cn(
-                            "truncate text-xs",
-                            isTyping
-                                ? " italic"
-                                : unread > 0
-                                    ? "text-foreground font-medium"
-                                    : "text-muted-foreground"
-                        )}
+        <div className="relative group">
+            {/* Hover dropdown — absolutely positioned, takes no layout space */}
+            {!other?.isBot && (
+                <div
+                    className={cn(
+                        "absolute right-2 top-3.5 z-10 pointer-events-none transition-opacity",
+                        dropdownOpen ? "opacity-100 pointer-events-auto" : "opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto"
+                    )}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <DropdownMenu
+                        open={dropdownOpen}
+                        onOpenChange={(open) => setOpenDropdownId(open ? conv._id : null)}
                     >
-                        {preview}
-                    </p>
-                    {unread > 0 && !isTyping && (
-                        <span className="shrink-0 flex items-center justify-center min-w-5 h-5 rounded-full text-white text-[10px] font-bold px-1">
-                            {unread > 99 ? "99+" : unread}
-                        </span>
+                        <DropdownMenuTrigger asChild>
+                            <button className="flex items-center justify-center size-5 rounded-md 
+                            bg-gray-200/60 hover:bg-gray-200/90
+                            dark:bg-sidebar-accent dark:text-muted-foreground dark:hover:text-foreground">
+                                <ChevronDown className="size-3" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); onToggleBlock(other!._id, other!.name, isBlocked) }}
+                                variant={isBlocked ? "default" : "destructive"}
+                            >
+                                {isBlocked ? <Ban className="size-4" /> : <Ban className="size-4" />}
+                                {isBlocked ? "Unblock user" : "Block user"}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); onClearChat(conv._id) }}
+                                variant="destructive"
+                            >
+                                <Trash2 className="size-4" />
+                                Clear chat
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+            )}
+            <div
+                role="button"
+                tabIndex={0}
+                onClick={onClick}
+                onKeyDown={(e) => e.key === "Enter" && onClick()}
+                className={cn(
+                    "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left transition-colors cursor-pointer",
+                    isActive
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "hover:bg-sidebar-accent/60"
+                )}
+            >
+                {/* avatar */}
+                <div className="relative shrink-0">
+                    <Avatar className="size-10">
+                        <AvatarImage src={other?.profilePic} alt={name} />
+                        <AvatarFallback className="bg-primary/15  text-xs font-semibold">
+                            {other?.isBot ? <Bot className="size-4" /> : initials(name)}
+                        </AvatarFallback>
+                    </Avatar>
+                    {/* online dot */}
+                    {(other?.isBot || other?.isOnline) && (
+                        <span className="absolute bottom-0 right-0 size-2.5 rounded-full bg-green-500 ring-2 ring-sidebar" />
                     )}
                 </div>
+
+                {/* text */}
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-1">
+                        <span className="truncate text-sm font-medium leading-tight">{name}</span>
+                        <span className={`shrink-0 text-[10px] text-muted-foreground group-hover:mr-5 ${dropdownOpen ? "mr-5" : "mr-0"}`}>
+                            {relativeTime(conv.updatedAt)}
+                        </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-1 mt-1">
+                        <p
+                            className={cn(
+                                "truncate text-xs",
+                                isTyping
+                                    ? " italic"
+                                    : unread > 0
+                                        ? "text-foreground font-medium"
+                                        : "text-muted-foreground"
+                            )}
+                        >
+                            {preview}
+                        </p>
+                        {unread > 0 && !isTyping && (
+                            <span className="shrink-0 flex bg-primary items-center justify-center min-w-5 h-5 rounded-full text-white text-[10px] font-bold px-1">
+                                {unread > 99 ? "99+" : unread}
+                            </span>
+                        )}
+                    </div>
+                </div>
             </div>
-        </button>
+        </div>
     )
 }
 
@@ -137,6 +198,39 @@ export default function ConversationsList() {
 
     const [query, setQuery] = useState("")
     const [newChatOpen, setNewChatOpen] = useState(false)
+    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
+    const [blockedUsers, setBlockedUsers] = useState<Set<string>>(
+        () => new Set((user?.blockedUsers ?? []).map(String))
+    )
+
+    // toggle block/unblock a user from the conversations list
+    const handleToggleBlock = async (userId: string, userName: string, isBlocked: boolean) => {
+        try {
+            if (isBlocked) {
+                await userApi.unblockUser(userId)
+                setBlockedUsers((prev) => { const s = new Set(prev); s.delete(userId); return s })
+                toast.success(`${userName} has been unblocked`)
+            } else {
+                await userApi.blockUser(userId)
+                setBlockedUsers((prev) => new Set(prev).add(userId))
+                toast.success(`${userName} has been blocked`)
+            }
+            setOpenDropdownId(null)
+        } catch {
+            toast.error(isBlocked ? "Failed to unblock user" : "Failed to block user")
+        }
+    }
+
+    // clear chat from the conversations list
+    const handleClearChatRow = async (convId: string) => {
+        try {
+            await messageApi.clearChat(convId)
+            setOpenDropdownId(null)
+            toast.success("Chat cleared")
+        } catch {
+            toast.error("Failed to clear chat")
+        }
+    }
 
     // Initial fetch
     useEffect(() => {
@@ -225,6 +319,11 @@ export default function ConversationsList() {
                             isActive={conv._id === activeId}
                             isTyping={!!typingConversations[conv._id]}
                             onClick={() => navigate(`/user/conversations/${conv._id}`)}
+                            openDropdownId={openDropdownId}
+                            setOpenDropdownId={setOpenDropdownId}
+                            onToggleBlock={handleToggleBlock}
+                            onClearChat={handleClearChatRow}
+                            blockedUsers={blockedUsers}
                         />
                     ))
                 )}

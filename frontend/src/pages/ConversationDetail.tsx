@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom"
 import { useAuth } from "@/hooks/use-auth"
 import { useChat, type Message } from "@/hooks/use-chat"
 import { useConversations } from "@/hooks/use-conversation"
-import { conversationApi, messageApi } from "@/lib/api"
+import { conversationApi, messageApi, userApi } from "@/lib/api"
 import socket, { emitJoinChat, emitLeaveChat, emitDeleteMessage } from "@/lib/socket"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -129,7 +129,54 @@ export default function ConversationDetail() {
     // Streaming bot response state
     const [streamingBot, setStreamingBot] = useState<{ conversationId: string; tempId: string; text: string } | null>(null)
 
-    // Select mode state
+    // Block status
+    const [blockStatus, setBlockStatus] = useState<{ iBlockedThem: boolean; theyBlockedMe: boolean }>({ iBlockedThem: false, theyBlockedMe: false })
+
+    // ── fetch block status whenever the receiver changes ─────────────────
+    useEffect(() => {
+        if (!receiver || receiver.isBot) {
+            setBlockStatus({ iBlockedThem: false, theyBlockedMe: false })
+            return
+        }
+        userApi.getBlockStatus(receiver._id)
+            .then((status) => setBlockStatus(status))
+            .catch(() => {/* silent — non-critical */})
+    }, [receiver?._id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── block / unblock handlers ──────────────────────────────────────────
+    const handleBlock = useCallback(async () => {
+        if (!receiver) return
+        try {
+            await userApi.blockUser(receiver._id)
+            setBlockStatus((prev) => ({ ...prev, iBlockedThem: true }))
+            toast.success(`${receiver.name} has been blocked`)
+        } catch {
+            toast.error("Failed to block user")
+        }
+    }, [receiver])
+
+    const handleUnblock = useCallback(async () => {
+        if (!receiver) return
+        try {
+            await userApi.unblockUser(receiver._id)
+            setBlockStatus((prev) => ({ ...prev, iBlockedThem: false }))
+            toast.success(`${receiver.name} has been unblocked`)
+        } catch {
+            toast.error("Failed to unblock user")
+        }
+    }, [receiver])
+
+    // ── socket: message-blocked ───────────────────────────────────────────
+    useEffect(() => {
+        const onBlocked = ({ conversationId: cid }: { conversationId: string }) => {
+            if (cid !== id) return
+            toast.error("Message not delivered — you can't send messages to this user.")
+        }
+        socket.on("message-blocked", onBlocked)
+        return () => { socket.off("message-blocked", onBlocked) }
+    }, [id])
+
+    // ── select mode state ─────────────────────────────────────────────────
     const [selectMode, setSelectMode] = useState(false)
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
@@ -441,7 +488,14 @@ export default function ConversationDetail() {
     return (
         <div className="flex flex-col h-full overflow-hidden">
             {/* Header */}
-            <ConversationDetailHeader receiver={receiver} onClearChat={handleClearChat} onSelectMode={enterSelectMode} />
+            <ConversationDetailHeader
+                receiver={receiver}
+                onClearChat={handleClearChat}
+                onSelectMode={enterSelectMode}
+                isBlockedByMe={blockStatus.iBlockedThem}
+                onBlock={handleBlock}
+                onUnblock={handleUnblock}
+            />
 
             {/* Messages */}
             <div
@@ -493,6 +547,8 @@ export default function ConversationDetail() {
                     myId={user._id}
                     receiverId={receiver?._id ?? ""}
                     isReceiverBot={receiver?.isBot ?? false}
+                    isBlocked={blockStatus.iBlockedThem}
+                    blockedByThem={blockStatus.theyBlockedMe}
                 />
             )}
 

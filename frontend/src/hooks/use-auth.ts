@@ -13,6 +13,7 @@ export type User = {
     isOnline: boolean;
     lastSeen: Date;
     isBot: boolean;
+    blockedUsers: string[];
 };
 
 export const useAuthProvider = () => {

@@ -54,15 +54,71 @@ const getPresignedUrl = async (req, res) => {
 
 const getOnlineStatus = async (req, res) => {
   const userId = req.params.id;
+  const requesterId = req.user.id;
   try {
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    res.status(200).json({ isOnline: user.isOnline });
+    // If this user has blocked the requester, return offline (sanitized)
+    const isBlocked = user.blockedUsers?.some(
+      (id) => id.toString() === requesterId
+    );
+    res.status(200).json({ isOnline: isBlocked ? false : user.isOnline });
   } catch (error) {
     console.log(error);
     res.status(500).send("Internal Server Error");
+  }
+};
+
+const blockUser = async (req, res) => {
+  const targetId = req.params.id;
+  const myId = req.user.id;
+  if (targetId === myId) return res.status(400).json({ error: "Cannot block yourself" });
+  try {
+    await User.findByIdAndUpdate(myId, {
+      $addToSet: { blockedUsers: targetId },
+    });
+    res.status(200).json({ message: "User blocked" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+const unblockUser = async (req, res) => {
+  const targetId = req.params.id;
+  const myId = req.user.id;
+  try {
+    await User.findByIdAndUpdate(myId, {
+      $pull: { blockedUsers: targetId },
+    });
+    res.status(200).json({ message: "User unblocked" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+const getBlockStatus = async (req, res) => {
+  const targetId = req.params.id;
+  const myId = req.user.id;
+  try {
+    const [me, them] = await Promise.all([
+      User.findById(myId, "blockedUsers"),
+      User.findById(targetId, "blockedUsers"),
+    ]);
+    if (!them) return res.status(404).json({ error: "User not found" });
+    const iBlockedThem = me.blockedUsers.some(
+      (id) => id.toString() === targetId
+    );
+    const theyBlockedMe = them.blockedUsers.some(
+      (id) => id.toString() === myId
+    );
+    res.status(200).json({ iBlockedThem, theyBlockedMe });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -176,4 +232,4 @@ const updateprofile = async (req, res) => {
   }
 };
 
-module.exports = { getPresignedUrl, getOnlineStatus, getNonFriendsList, updateprofile };
+module.exports = { getPresignedUrl, getOnlineStatus, getNonFriendsList, updateprofile, blockUser, unblockUser, getBlockStatus };

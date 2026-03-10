@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react"
-import { ArrowRight, ImagePlus } from "lucide-react"
+import { ArrowRight, ImagePlus, ShieldX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -20,11 +20,13 @@ interface Props {
     myId: string
     receiverId: string
     isReceiverBot?: boolean
+    isBlocked?: boolean
+    blockedByThem?: boolean
 }
 
 const STOP_TYPING_DELAY = 1500
 
-export default function MessageInput({ conversationId, myId, receiverId, isReceiverBot }: Props) {
+export default function MessageInput({ conversationId, myId, receiverId, isReceiverBot, isBlocked, blockedByThem }: Props) {
     const [text, setText] = useState("")
     const [uploading, setUploading] = useState(false)
     const [imageDialogOpen, setImageDialogOpen] = useState(false)
@@ -141,6 +143,16 @@ export default function MessageInput({ conversationId, myId, receiverId, isRecei
 
     return (
         <>
+            {(isBlocked || blockedByThem) ? (
+                <div className="flex items-center justify-center gap-2 px-4 py-3 border-t bg-background text-muted-foreground text-sm">
+                    <ShieldX className="size-4 shrink-0" />
+                    <span>
+                        {isBlocked
+                            ? "You have blocked this user. Unblock to send messages."
+                            : "You can't send messages to this user."}
+                    </span>
+                </div>
+            ) : (
             <div className="flex items-end gap-2 p-3 border-t bg-background">
                 {/* Image upload button */}
                 {!isReceiverBot && (<><Button
@@ -186,6 +198,7 @@ export default function MessageInput({ conversationId, myId, receiverId, isRecei
                     <ArrowRight className="size-5" />
                 </Button>
             </div>
+            )}
 
             {/* Image preview dialog */}
             <Dialog open={imageDialogOpen} onOpenChange={(open) => { if (!open) closeImageDialog() }}>

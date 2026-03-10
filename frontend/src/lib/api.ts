@@ -177,6 +177,23 @@ export const userApi = {
             `${API_BASE}/user/presigned-url?filename=${encodeURIComponent(filename)}&filetype=${encodeURIComponent(filetype)}`,
             { headers: headers() }
         ).then(handleResponse),
+
+    blockUser: (userId: string) =>
+        fetch(`${API_BASE}/user/block/${userId}`, {
+            method: "POST",
+            headers: headers(),
+        }).then(handleResponse),
+
+    unblockUser: (userId: string) =>
+        fetch(`${API_BASE}/user/block/${userId}`, {
+            method: "DELETE",
+            headers: headers(),
+        }).then(handleResponse),
+
+    getBlockStatus: (userId: string) =>
+        fetch(`${API_BASE}/user/block-status/${userId}`, {
+            headers: headers(),
+        }).then((res) => handleResponse<{ iBlockedThem: boolean; theyBlockedMe: boolean }>(res)),
 };
 
 export { API_BASE };
