@@ -36,7 +36,12 @@ const MessageSchema = new mongoose.Schema(
         },
       },
     ],
-    deletedFrom: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    // hiddenFrom: hard-deleted for these users — skipped entirely in queries
+    hiddenFrom: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    // softDeleted: message shows as "This message was deleted" tombstone for everyone
+    softDeleted: { type: Boolean, default: false },
+    // starredBy: users who have starred this message
+    starredBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     replyTo: {
       type: mongoose.Schema.Types.ObjectId,
       default: null,

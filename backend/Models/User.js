@@ -50,6 +50,18 @@ const Userschema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    blockedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    pinnedConversations: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Conversation",
+      },
+    ]
   },
   {
     timestamps: true,

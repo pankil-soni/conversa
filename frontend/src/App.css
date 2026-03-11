@@ -1,7 +1,0 @@
-/* Minimal global reset — layout sizing handled by Chakra theme */
-.App {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}

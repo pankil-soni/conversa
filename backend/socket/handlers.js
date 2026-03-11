@@ -1,7 +1,8 @@
 const Conversation = require("../Models/Conversation.js");
 const User = require("../Models/User.js");
+const Message = require("../Models/Message.js");
 const {
-  getAiResponse,
+  streamAiResponse,
   sendMessageHandler,
   deleteMessageHandler,
 } = require("../Controllers/message-controller.js");
@@ -30,13 +31,19 @@ module.exports = (io, socket, userSocketMap) => {
         members: { $in: [currentUserId] },
       });
 
+      // Collect unique friend IDs across all conversations
+      const friendIds = new Set();
       conversations.forEach((conversation) => {
-        const room = io.sockets.adapter.rooms.get(conversation.id);
-        if (room) {
-          io.to(conversation.id).emit("receiver-online", {
-            userId: currentUserId,
-          });
-        }
+        conversation.members.forEach((memberId) => {
+          if (memberId.toString() !== currentUserId) {
+            friendIds.add(memberId.toString());
+          }
+        });
+      });
+
+      // Notify every online friend via their personal room
+      friendIds.forEach((friendId) => {
+        io.to(friendId).emit("user-online", { userId: currentUserId });
       });
     } catch (error) {
       console.error("Error in setup handler:", error);
@@ -73,6 +80,25 @@ module.exports = (io, socket, userSocketMap) => {
         return unread;
       });
       await conv.save({ timestamps: false });
+
+      // Mark all unseen messages in this conversation as seen by this user
+      const seenAt = new Date();
+      await Message.updateMany(
+        {
+          conversationId: roomId,
+          senderId: { $ne: currentUserId },
+          hiddenFrom: { $ne: currentUserId },
+          "seenBy.user": { $ne: currentUserId },
+        },
+        { $push: { seenBy: { user: currentUserId, seenAt } } }
+      );
+
+      // Notify the sender(s) in this room that their messages were seen
+      io.to(roomId).emit("messages-seen", {
+        conversationId: roomId,
+        seenBy: currentUserId,
+        seenAt,
+      });
 
       io.to(roomId).emit("user-joined-room", currentUserId);
     } catch (error) {
@@ -118,31 +144,33 @@ module.exports = (io, socket, userSocketMap) => {
 
       if (botMember) {
         const botId = botMember._id.toString();
+        const tempId = `bot-stream-${Date.now()}`;
 
-        io.to(conversationId).emit("typing", { typer: botId });
-
-        const mockUserMessage = {
-          id_: Date.now().toString(),
-          conversationId,
-          senderId,
-          text,
-          seenBy: [{ user: botId, seenAt: new Date() }],
-          imageUrl,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-
-        io.to(conversationId).emit("receive-message", mockUserMessage);
-
-        const responseMessage = await getAiResponse(text, senderId, conversationId);
-
-        if (responseMessage === null) {
-          io.to(conversationId).emit("stop-typing", { typer: botId });
-          return;
+        try {
+          for await (const event of streamAiResponse(text, senderId, conversationId)) {
+            if (event.type === "user-message") {
+              // Emit real user message (has a proper MongoDB _id)
+              io.to(conversationId).emit("receive-message", event.message);
+              // Now start the typing indicator (conversationId required by frontend)
+              io.to(conversationId).emit("typing", { typer: botId, conversationId });
+            } else if (event.type === "chunk") {
+              io.to(conversationId).emit("bot-chunk", { conversationId, tempId, chunk: event.text });
+            } else if (event.type === "done") {
+              io.to(conversationId).emit("stop-typing", { typer: botId, conversationId });
+              io.to(conversationId).emit("bot-done", { conversationId, tempId, message: event.message });
+            } else if (event.type === "error") {
+              io.to(conversationId).emit("stop-typing", { typer: botId, conversationId });
+              io.to(conversationId).emit("bot-error", {
+                conversationId,
+                userMessageId: event.userMessageId ?? null,
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Bot streaming error:", err);
+          io.to(conversationId).emit("stop-typing", { typer: botId, conversationId });
+          io.to(conversationId).emit("bot-error", { conversationId, userMessageId: null });
         }
-
-        io.to(conversationId).emit("receive-message", responseMessage);
-        io.to(conversationId).emit("stop-typing", { typer: botId });
         return;
       }
 
@@ -153,6 +181,24 @@ module.exports = (io, socket, userSocketMap) => {
       if (!receiverMember) return;
 
       const receiverId = receiverMember._id;
+
+      // ── Block check ───────────────────────────────────────────────────────
+      // Prevent sending if (a) the receiver has blocked the sender, or
+      // (b) the sender has blocked the receiver.
+      const [receiverDoc, senderDoc] = await Promise.all([
+        User.findById(receiverId, "blockedUsers"),
+        User.findById(senderId, "blockedUsers"),
+      ]);
+      const isBlockedByReceiver = receiverDoc?.blockedUsers?.some(
+        (id) => id.toString() === senderId
+      );
+      const senderBlockedReceiver = senderDoc?.blockedUsers?.some(
+        (id) => id.toString() === receiverId.toString()
+      );
+      if (isBlockedByReceiver || senderBlockedReceiver) {
+        socket.emit("message-blocked", { conversationId });
+        return;
+      }
 
       // Determine if the receiver currently has the conversation room open.
       // Check ALL of the receiver's sockets so multi-device is handled correctly.
@@ -207,19 +253,33 @@ module.exports = (io, socket, userSocketMap) => {
   socket.on("send-message", handleSendMessage);
 
   // ─── Delete message ────────────────────────────────────────────────────────
+  // scope="everyone": soft-delete → shows tombstone to all. Broadcast to room.
+  // scope="me":       hard-delete for sender only → no broadcast (only caller hides it).
   const handleDeleteMessage = async (data) => {
     try {
-      const { messageId, deleteFrom, conversationId } = data;
-      const deleted = await deleteMessageHandler({ messageId, deleteFrom });
-      if (deleted && deleteFrom.length > 1) {
-        io.to(conversationId).emit("message-deleted", data);
+      const { messageId, conversationId, scope } = data;
+      const updated = await deleteMessageHandler({
+        messageId,
+        scope,
+        requesterId: currentUserId,
+      });
+      if (!updated) return;
+
+      if (scope === 'everyone') {
+        // Broadcast to every member so they see the tombstone in real-time
+        io.to(conversationId).emit('message-deleted', {
+          messageId,
+          conversationId,
+          softDeleted: true,
+        });
       }
+      // scope="me": no broadcast — remove from local state on client only
     } catch (error) {
-      console.error("Error in delete-message handler:", error);
+      console.error('Error in delete-message handler:', error);
     }
   };
 
-  socket.on("delete-message", handleDeleteMessage);
+  socket.on('delete-message', handleDeleteMessage);
 
   // ─── Typing indicators ─────────────────────────────────────────────────────
   // Helper: emit a typing event to everyone in the conversation room, and also
@@ -281,13 +341,19 @@ module.exports = (io, socket, userSocketMap) => {
         members: { $in: [currentUserId] },
       });
 
+      // Collect unique friend IDs across all conversations
+      const friendIds = new Set();
       conversations.forEach((conversation) => {
-        const room = io.sockets.adapter.rooms.get(conversation.id);
-        if (room) {
-          io.to(conversation.id).emit("receiver-offline", {
-            userId: currentUserId,
-          });
-        }
+        conversation.members.forEach((memberId) => {
+          if (memberId.toString() !== currentUserId) {
+            friendIds.add(memberId.toString());
+          }
+        });
+      });
+
+      // Notify every online friend via their personal room
+      friendIds.forEach((friendId) => {
+        io.to(friendId).emit("user-offline", { userId: currentUserId });
       });
     } catch (error) {
       console.error("Error updating user status on disconnect:", error);

@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed:users": "node scripts/seed-test-users.js",
+    "delete:users": "node scripts/delete-test-users.js"
   },
   "author": "",
   "license": "ISC",
