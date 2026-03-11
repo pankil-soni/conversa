@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/sidebar"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuth } from "@/hooks/use-auth"
-import { useConversations } from "@/hooks/use-conversation"
+import { useConversations } from "@/hooks/use-conversations"
 import { cn } from "@/lib/utils"
 import { Separator } from "../ui/separator"
 
@@ -36,13 +36,13 @@ const NAV_ITEMS = [
 
 export default function DashboardSidebar() {
     const { user, logout } = useAuth()
-    const { chatList, aiChatbotConversationId } = useConversations()
+    const { conversationsList, aiChatbotConversationId } = useConversations()
     const { state, isMobile } = useSidebar()
     const location = useLocation()
     const navigate = useNavigate()
 
     // number of conversations that have at least 1 unread message for the current user
-    const unreadChatsCount = chatList.filter((c) =>
+    const unreadChatsCount = conversationsList.filter((c) =>
         c.unreadCounts.some((u) => u.userId === user?._id && u.count > 0)
     ).length
 

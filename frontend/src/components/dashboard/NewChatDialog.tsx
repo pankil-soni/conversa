@@ -22,7 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 
 import { userApi, conversationApi, type NonFriendsSort } from "@/lib/api"
-import { useConversations } from "@/hooks/use-conversation"
+import { useConversations } from "@/hooks/use-conversations"
 import { useAuth } from "@/hooks/use-auth"
 import type { User } from "@/hooks/use-auth"
 

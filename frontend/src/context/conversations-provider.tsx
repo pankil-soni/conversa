@@ -1,5 +1,5 @@
 
-import { ConversationsContext, useConversationsProvider } from "@/hooks/use-conversation";
+import { ConversationsContext, useConversationsProvider } from "@/hooks/use-conversations";
 import type { ReactNode } from "react";
 
 export const ConversationsProvider = ({ children }: { children: ReactNode }) => {

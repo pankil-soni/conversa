@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Bot } from "lucide-react"
 import socket from "@/lib/socket"
 import { useChat } from "@/hooks/use-chat"
-import { useConversations, type Conversation } from "@/hooks/use-conversation"
+import { useConversations, type Conversation } from "@/hooks/use-conversations"
 import type { User } from "@/hooks/use-auth"
 import type { Message } from "@/hooks/use-chat"
 import notificationSound from "@/assets/newmessage.wav"
@@ -30,7 +30,7 @@ function initials(name: string) {
 export default function NotificationListener() {
     const navigate = useNavigate()
     const { activeChatId } = useChat()
-    const { setChatList } = useConversations()
+    const { setConversationsList } = useConversations()
 
     // Keep a ref so the socket handler always sees the latest activeChatId
     const activeChatIdRef = useRef(activeChatId)
@@ -46,8 +46,8 @@ export default function NotificationListener() {
             const { message, sender } = data
             const convId = message.conversationId
 
-            // ── update chatList: bump to top + increment unread ───────────────
-            setChatList((prev) => {
+            // ── update conversationsList: bump to top + increment unread ───────────────
+            setConversationsList((prev) => {
                 const idx = prev.findIndex((c) => c._id === convId)
 
                 if (idx === -1) {
@@ -140,7 +140,7 @@ export default function NotificationListener() {
         return () => {
             socket.off("new-message-notification", onNotification)
         }
-    }, [navigate, setChatList])
+    }, [navigate, setConversationsList])
 
     return null
 }

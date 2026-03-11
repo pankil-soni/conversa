@@ -14,10 +14,11 @@ export type Conversation = {
     unreadCounts: unreadCount[];
     createdAt: string;
     updatedAt: string;
+    isPinned: boolean;
 };
 
 export const useConversationsProvider = () => {
-    const [chatList, setChatList] = useState<Conversation[]>([]);
+    const [conversationsList, setConversationsList] = useState<Conversation[]>([]);
     const [originalChatList, setOriginalChatList] = useState<Conversation[]>([]);
     const [aiChatbotConversationId, setAIChatbotConversationId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -27,7 +28,7 @@ export const useConversationsProvider = () => {
 
         try {
             const data = await conversationApi.list<Conversation[]>();
-            setChatList(data);
+            setConversationsList(data);
             setOriginalChatList(data);
 
             // find the chatbot conversation and set the chatbot id
@@ -41,8 +42,8 @@ export const useConversationsProvider = () => {
     }, []);
 
     return {
-        chatList,
-        setChatList,
+        conversationsList,
+        setConversationsList,
         originalChatList,
         fetchConversations,
         isLoading,

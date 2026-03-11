@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { Search, MessageCircle, Bot, SquarePen, ChevronDown, Trash2, ShieldX, Pin, PinOff } from "lucide-react"
-import { useConversations, type Conversation } from "@/hooks/use-conversation"
+import { useConversations, type Conversation } from "@/hooks/use-conversations"
 import { useAuth } from "@/hooks/use-auth"
 import { useChat } from "@/hooks/use-chat"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -199,7 +199,7 @@ function ConversationRow({ conv, myId, isActive, isTyping, onClick, openDropdown
 
 /* ─── main component ───────────────────────────────────────────────────── */
 export default function ConversationsList() {
-    const { chatList, setChatList, fetchConversations, isLoading } =
+    const { conversationsList, setConversationsList, fetchConversations, isLoading } =
         useConversations()
     const { user } = useAuth()
     const { typingConversations } = useChat()
@@ -246,7 +246,7 @@ export default function ConversationsList() {
     const handleTogglePin = async (convId: string) => {
         try {
             const { isPinned } = await conversationApi.togglePin(convId)
-            setChatList((prev) => {
+            setConversationsList((prev) => {
                 const updated = prev.map((c) =>
                     c._id === convId ? { ...c, isPinned } : c
                 )
@@ -271,7 +271,7 @@ export default function ConversationsList() {
         if (!user) return
 
         const updateOnlineStatus = (userId: string, isOnline: boolean) => {
-            setChatList((prev) =>
+            setConversationsList((prev) =>
                 prev.map((conv) => ({
                     ...conv,
                     members: conv.members.map((m) =>
@@ -292,15 +292,15 @@ export default function ConversationsList() {
             socket.off("user-online", onUserOnline)
             socket.off("user-offline", onUserOffline)
         }
-    }, [user, setChatList])
+    }, [user, setConversationsList])
 
-    // Derive displayed list (search filter applied to freshest chatList)
+    // Derive displayed list (search filter applied to freshest conversationsList)
     const displayList = query.trim()
-        ? chatList.filter((conv) => {
+        ? conversationsList.filter((conv) => {
             const other = getOtherMember(conv, user?._id ?? "")
             return other?.name.toLowerCase().includes(query.toLowerCase())
         })
-        : chatList
+        : conversationsList
 
     return (
         <div className="flex h-full flex-col">

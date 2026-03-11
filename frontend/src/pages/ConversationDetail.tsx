@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from "react"
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { useAuth } from "@/hooks/use-auth"
 import { useChat, type Message } from "@/hooks/use-chat"
-import { useConversations } from "@/hooks/use-conversation"
+import { useConversations } from "@/hooks/use-conversations"
 import { conversationApi, messageApi, userApi } from "@/lib/api"
 import socket, { emitJoinChat, emitLeaveChat, emitDeleteMessage } from "@/lib/socket"
 import ReactMarkdown from "react-markdown"
@@ -24,7 +24,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { toast } from "sonner"
-import type { Conversation } from "@/hooks/use-conversation"
+import type { Conversation } from "@/hooks/use-conversations"
 import type { User } from "@/hooks/use-auth"
 
 /* ─── CSS typing indicator ─────────────────────────────────────────────── */
@@ -121,7 +121,7 @@ export default function ConversationDetail() {
         isOtherUserTyping, setIsOtherUserTyping,
         isChatLoading, setIsChatLoading,
     } = useChat()
-    const { setChatList } = useConversations()
+    const { setConversationsList } = useConversations()
     const scrollAreaRef = useRef<HTMLDivElement>(null)
     const isInitialLoadRef = useRef(true)
     // Tracks whether the first scroll (to bottom or to highlight) has been done
@@ -262,7 +262,7 @@ export default function ConversationDetail() {
                 })
                 setMessageList(mergedMsgs)
                 // reset unread count in sidebar list
-                setChatList((prev) =>
+                setConversationsList((prev) =>
                     prev.map((c) =>
                         c._id === id
                             ? {
@@ -339,7 +339,7 @@ export default function ConversationDetail() {
             if (msg.conversationId !== id) return
             setMessageList((prev) => [...prev, msg])
             // update sidebar latest message and bump to top
-            setChatList((prev) => {
+            setConversationsList((prev) => {
                 const idx = prev.findIndex((c) => c._id === id)
                 if (idx === -1) return prev
                 const updated = prev.map((c, i) =>
@@ -359,7 +359,7 @@ export default function ConversationDetail() {
         }
         socket.on("receive-message", onMessage)
         return () => { socket.off("receive-message", onMessage) }
-    }, [id, scrollToBottom, setChatList, setMessageList])
+    }, [id, scrollToBottom, setConversationsList, setMessageList])
 
     // ── socket: bot streaming (bot-chunk / bot-done) ──────────────────────
     useEffect(() => {
