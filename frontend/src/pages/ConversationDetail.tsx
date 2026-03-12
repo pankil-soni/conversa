@@ -438,21 +438,33 @@ export default function ConversationDetail() {
         }
     }, [setReceiver])
 
-    // ── socket: message-deleted (soft-delete for everyone) ──────────────────
+    // ── socket: message-deleted (soft-delete for everyone OR me-only) ─────────
     useEffect(() => {
-        const onDeleted = (data: { messageId: string; conversationId: string; softDeleted: boolean }) => {
+        const onDeleted = (data: { messageId: string; conversationId: string; softDeleted: boolean; latestmessage?: string }) => {
             if (data.conversationId !== id) return
-            setMessageList((prev) =>
-                prev.map((m) =>
-                    m._id === data.messageId
-                        ? { ...m, softDeleted: true, text: undefined, imageUrl: undefined }
-                        : m
+            if (data.softDeleted) {
+                setMessageList((prev) =>
+                    prev.map((m) =>
+                        m._id === data.messageId
+                            ? { ...m, softDeleted: true, text: undefined, imageUrl: undefined }
+                            : m
+                    )
                 )
-            )
+            }
+            // Update the sidebar conversation preview with the new latest message text
+            if (data.latestmessage !== undefined) {
+                setConversationsList((prev) =>
+                    prev.map((c) =>
+                        c._id === data.conversationId
+                            ? { ...c, latestmessage: data.latestmessage! }
+                            : c
+                    )
+                )
+            }
         }
         socket.on("message-deleted", onDeleted)
         return () => { socket.off("message-deleted", onDeleted) }
-    }, [id, setMessageList])
+    }, [id, setMessageList, setConversationsList])
 
     // ── sync typing indicator ────────────────────────────────────────────
     useEffect(() => {
@@ -474,24 +486,40 @@ export default function ConversationDetail() {
                 await messageApi.delete(messageId, scope)
                 if (scope === "me") {
                     // Hard-delete for self: remove from local list immediately
-                    setMessageList((prev) => prev.filter((m) => m._id !== messageId))
+                    const newList = messageList.filter((m) => m._id !== messageId)
+                    setMessageList(newList)
+                    // Update the sidebar preview for this user only
+                    const latestMsg = newList[newList.length - 1]
+                    const newPreview = latestMsg
+                        ? (latestMsg.softDeleted ? "This message was deleted" : (latestMsg.text || "sent an image"))
+                        : ""
+                    setConversationsList((prev) =>
+                        prev.map((c) => c._id === id ? { ...c, latestmessage: newPreview } : c)
+                    )
                 } else {
                     // Soft-delete for everyone: emit socket so other participant sees tombstone
                     emitDeleteMessage({ messageId, conversationId: id, scope })
                     // Update our own view immediately (we won't receive our own socket echo)
-                    setMessageList((prev) =>
-                        prev.map((m) =>
-                            m._id === messageId
-                                ? { ...m, softDeleted: true, text: undefined, imageUrl: undefined }
-                                : m
-                        )
+                    const newList = messageList.map((m) =>
+                        m._id === messageId
+                            ? { ...m, softDeleted: true, text: undefined, imageUrl: undefined }
+                            : m
+                    )
+                    setMessageList(newList)
+                    // Update sidebar preview immediately for the sender
+                    const latestMsg = newList[newList.length - 1]
+                    const newPreview = latestMsg
+                        ? (latestMsg.softDeleted ? "This message was deleted" : (latestMsg.text || "sent an image"))
+                        : ""
+                    setConversationsList((prev) =>
+                        prev.map((c) => c._id === id ? { ...c, latestmessage: newPreview } : c)
                     )
                 }
             } catch {
                 toast.error("Failed to delete message.")
             }
         },
-        [user, id, setMessageList]
+        [user, id, messageList, setMessageList, setConversationsList]
     )
 
     // ── star handler ──────────────────────────────────────────────────────

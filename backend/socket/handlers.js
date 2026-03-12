@@ -266,14 +266,52 @@ module.exports = (io, socket, userSocketMap) => {
       if (!updated) return;
 
       if (scope === 'everyone') {
-        // Broadcast to every member so they see the tombstone in real-time
+        // Find the newest non-tombstone message to determine the new preview text
+        const latestNonDeleted = await Message.findOne({
+          conversationId,
+          softDeleted: { $ne: true },
+        }).sort({ createdAt: -1 });
+
+        // If the tombstone is newer (or no other messages exist) → show tombstone text
+        const newLatest =
+          !latestNonDeleted ||
+          new Date(updated.createdAt) >= new Date(latestNonDeleted.createdAt)
+            ? 'This message was deleted'
+            : latestNonDeleted.text || 'sent an image';
+
+        // Persist new preview to the conversation document
+        await Conversation.findByIdAndUpdate(
+          conversationId,
+          { latestmessage: newLatest },
+          { timestamps: false }
+        );
+
+        // Broadcast to every member so they see the tombstone + updated preview in real-time
         io.to(conversationId).emit('message-deleted', {
           messageId,
           conversationId,
           softDeleted: true,
+          latestmessage: newLatest,
+        });
+      } else {
+        // scope="me": find the new latest message visible to this user only
+        const latestVisible = await Message.findOne({
+          conversationId,
+          hiddenFrom: { $ne: currentUserId },
+        }).sort({ createdAt: -1 });
+
+        const newLatest = latestVisible
+          ? (latestVisible.softDeleted ? 'This message was deleted' : (latestVisible.text || 'sent an image'))
+          : '';
+
+        // Only emit to the requester so their sidebar preview updates
+        socket.emit('message-deleted', {
+          messageId,
+          conversationId,
+          softDeleted: false,
+          latestmessage: newLatest,
         });
       }
-      // scope="me": no broadcast — remove from local state on client only
     } catch (error) {
       console.error('Error in delete-message handler:', error);
     }
