@@ -20,6 +20,7 @@ export interface SendMessagePayload {
     conversationId: string;
     text?: string;
     imageUrl?: string;
+    replyTo?: string | null;
 }
 
 export interface DeleteMessagePayload {
@@ -59,8 +60,8 @@ export const emitLeaveChat = (roomId: string): void => {
     socket.emit("leave-chat", roomId);
 };
 
-export const emitSendMessage = ({ conversationId, text, imageUrl }: SendMessagePayload): void => {
-    socket.emit("send-message", { conversationId, text, imageUrl });
+export const emitSendMessage = ({ conversationId, text, imageUrl, replyTo }: SendMessagePayload): void => {
+    socket.emit("send-message", { conversationId, text, imageUrl, replyTo });
 };
 
 export const emitDeleteMessage = ({ messageId, conversationId, scope }: DeleteMessagePayload): void => {

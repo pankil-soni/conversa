@@ -3,6 +3,14 @@ import type { User } from "./use-auth";
 import { useContext } from "react";
 import { createContext } from "react";
 
+export type ReplyToPreview = {
+    _id: string;
+    text?: string;
+    imageUrl?: string;
+    senderId: string;
+    softDeleted: boolean;
+};
+
 export type Message = {
     _id: string;
     conversationId: string;
@@ -13,7 +21,7 @@ export type Message = {
     hiddenFrom: string[];
     softDeleted: boolean;
     starredBy?: string[];
-    replyTo?: string | null;
+    replyTo?: ReplyToPreview | null;
     createdAt: string;
     updatedAt: string;
 };

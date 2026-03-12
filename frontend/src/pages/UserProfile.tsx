@@ -1,9 +1,11 @@
 
 import { useState, useRef } from "react"
-import { Camera, Pencil, Check, X, Eye, EyeOff, Loader2, Trash2 } from "lucide-react"
+import { Camera, Pencil, Check, X, Eye, EyeOff, Loader2, Trash2, Sun, Moon, Monitor } from "lucide-react"
 import { toast } from "sonner"
+import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/hooks/use-auth"
 import { userApi } from "@/lib/api"
+import { useTheme } from "@/components/theme-provider"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,6 +13,16 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 /* ─── localStorage keys ─────────────────────────────────────────────────── */
 export const LS_NOTIF_BANNERS = "notif-banners-enabled"
@@ -148,7 +160,9 @@ function PasswordInput({
 
 /* ─── main page ─────────────────────────────────────────────────────────── */
 const UserProfile = () => {
-    const { user, setUser } = useAuth()
+    const { user, setUser, logout } = useAuth()
+    const { theme, setTheme } = useTheme()
+    const navigate = useNavigate()
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [avatarUploading, setAvatarUploading] = useState(false)
 
@@ -161,6 +175,15 @@ const UserProfile = () => {
     // notification preferences
     const [bannersEnabled, setBannersEnabled] = useState(() => getStoredBool(LS_NOTIF_BANNERS))
     const [soundEnabled, setSoundEnabled] = useState(() => getStoredBool(LS_NOTIF_SOUND))
+    const [emailNotifsEnabled, setEmailNotifsEnabled] = useState(
+        () => user?.emailNotificationsEnabled ?? true
+    )
+    const [emailNotifsLoading, setEmailNotifsLoading] = useState(false)
+
+    // delete account dialog
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+    const [deleteConfirmText, setDeleteConfirmText] = useState("")
+    const [deleting, setDeleting] = useState(false)
 
     if (!user) return null
 
@@ -265,7 +288,45 @@ const UserProfile = () => {
         localStorage.setItem(LS_NOTIF_SOUND, String(val))
     }
 
+    const toggleEmailNotifs = async (val: boolean) => {
+        setEmailNotifsEnabled(val)
+        setEmailNotifsLoading(true)
+        try {
+            await userApi.updateProfile({ emailNotificationsEnabled: val })
+            setUser({ ...user, emailNotificationsEnabled: val })
+        } catch (err) {
+            // Revert on failure
+            setEmailNotifsEnabled(!val)
+            toast.error(err instanceof Error ? err.message : "Failed to update email notifications")
+        } finally {
+            setEmailNotifsLoading(false)
+        }
+    }
+
+    /* ── logout ─────────────────────────────────────────────────────────── */
+    const handleLogout = () => {
+        logout()
+        navigate("/login")
+    }
+
+    /* ── delete account ─────────────────────────────────────────────────── */
+    const handleDeleteAccount = async () => {
+        setDeleting(true)
+        try {
+            await userApi.deleteAccount()
+            toast.success("Account deleted")
+            logout()
+            navigate("/login")
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to delete account")
+        } finally {
+            setDeleting(false)
+            setDeleteDialogOpen(false)
+        }
+    }
+
     return (
+        <>
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
             <div className="max-w-xl mx-auto space-y-6">
 
@@ -366,6 +427,41 @@ const UserProfile = () => {
                     </CardContent>
                 </Card>
 
+                {/* ── Appearance card ───────────────────────────────────── */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Appearance</CardTitle>
+                        <CardDescription>
+                            Choose your preferred color theme. You can also press{" "}
+                            <kbd className="inline-flex items-center gap-1 rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-mono font-medium text-muted-foreground">D</kbd>{" "}
+                            anywhere (outside a text field) to quickly toggle between light and dark.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-3 gap-3">
+                            {([
+                                { value: "light", label: "Light", Icon: Sun },
+                                { value: "dark",  label: "Dark",  Icon: Moon },
+                                { value: "system", label: "System", Icon: Monitor },
+                            ] as const).map(({ value, label, Icon }) => (
+                                <button
+                                    key={value}
+                                    onClick={() => setTheme(value)}
+                                    className={[
+                                        "flex flex-col items-center gap-2 rounded-lg border-2 px-3 py-4 text-sm font-medium transition-colors",
+                                        theme === value
+                                            ? "border-primary bg-primary/10 text-primary"
+                                            : "border-border bg-muted/30 text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                                    ].join(" ")}
+                                >
+                                    <Icon className="size-5" />
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+
                 {/* ── Notification Settings card ─────────────────────────── */}
                 <Card>
                     <CardHeader>
@@ -396,11 +492,84 @@ const UserProfile = () => {
                                 onCheckedChange={toggleSound}
                             />
                         </div>
+                        <Separator />
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label htmlFor="notif-email" className="text-sm font-medium">Email Notifications</Label>
+                                <p className="text-xs text-muted-foreground">Receive an email when you get a message while offline</p>
+                            </div>
+                            <Switch
+                                id="notif-email"
+                                checked={emailNotifsEnabled}
+                                disabled={emailNotifsLoading}
+                                onCheckedChange={toggleEmailNotifs}
+                            />
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* ── Account Actions card ──────────────────────────────── */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Account</CardTitle>
+                        <CardDescription>Manage your session and account</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        <Button
+                            variant="outline"
+                            className="w-full justify-center gap-2"
+                            onClick={handleLogout}
+                        >
+                            Log Out
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            className="w-full justify-center gap-2"
+                            onClick={() => { setDeleteConfirmText(""); setDeleteDialogOpen(true) }}
+                        >
+                            Delete My Account
+                        </Button>
                     </CardContent>
                 </Card>
 
             </div>
         </div>
+
+        {/* ── Delete Account confirmation dialog ─────────────────────── */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete account?</AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                        <div className="space-y-3">
+                            <p>
+                                This action <strong>cannot be undone</strong>. Your profile will be anonymised —
+                                your name, email, and bio will be cleared, but your messages and conversations
+                                will remain visible to other participants.
+                            </p>
+                            <p>Type <strong>DELETE</strong> below to confirm:</p>
+                            <Input
+                                value={deleteConfirmText}
+                                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                placeholder="DELETE"
+                                className="font-mono"
+                            />
+                        </div>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        disabled={deleteConfirmText !== "DELETE" || deleting}
+                        onClick={handleDeleteAccount}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                        {deleting ? <><Loader2 className="size-4 mr-2 animate-spin" />Deleting…</> : "Delete Account"}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+        </>
     )
 }
 

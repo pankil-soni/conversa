@@ -14,6 +14,8 @@ export type User = {
     lastSeen: Date;
     isBot: boolean;
     blockedUsers: string[];
+    isEmailVerified: boolean;
+    emailNotificationsEnabled: boolean;
 };
 
 export const useAuthProvider = () => {

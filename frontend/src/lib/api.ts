@@ -24,6 +24,7 @@ export interface AuthTokenResponse {
         name: string;
         email: string;
         profilePic: string;
+        isEmailVerified: boolean;
     };
 }
 
@@ -39,6 +40,7 @@ export interface UpdateProfilePayload {
     profilePic?: string;
     oldpassword?: string;
     newpassword?: string;
+    emailNotificationsEnabled?: boolean;
 }
 
 export type NonFriendsSort = "name_asc" | "name_desc" | "last_seen_recent" | "last_seen_oldest";
@@ -93,6 +95,19 @@ export const authApi = {
             method: "POST",
             headers: headers(),
             body: JSON.stringify({ email }),
+        }).then(handleResponse),
+
+    sendVerificationOtp: () =>
+        fetch(`${API_BASE}/auth/send-verification-otp`, {
+            method: "POST",
+            headers: headers(),
+        }).then(handleResponse),
+
+    verifyEmail: (otp: string) =>
+        fetch(`${API_BASE}/auth/verify-email`, {
+            method: "POST",
+            headers: headers(),
+            body: JSON.stringify({ otp }),
         }).then(handleResponse),
 };
 
@@ -211,6 +226,12 @@ export const userApi = {
         fetch(`${API_BASE}/user/block-status/${userId}`, {
             headers: headers(),
         }).then((res) => handleResponse<{ iBlockedThem: boolean; theyBlockedMe: boolean }>(res)),
+
+    deleteAccount: () =>
+        fetch(`${API_BASE}/user/delete`, {
+            method: "DELETE",
+            headers: headers(),
+        }).then(handleResponse),
 };
 
 export { API_BASE };

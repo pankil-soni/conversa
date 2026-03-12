@@ -6,6 +6,7 @@ const {
   sendMessageHandler,
   deleteMessageHandler,
 } = require("../Controllers/message-controller.js");
+const sendMessageEmail = require("../utils/sendMessageEmail.js");
 
 // userSocketMap is Map<userId, Set<socketId>> injected from socket/index.js.
 // It is used to determine whether a user still has any open connections before
@@ -116,7 +117,7 @@ module.exports = (io, socket, userSocketMap) => {
     try {
       console.log("Received message");
 
-      const { conversationId, text, imageUrl } = data;
+      const { conversationId, text, imageUrl, replyTo } = data;
       // Always use the authenticated user as the sender — never trust client-supplied senderId
       const senderId = currentUserId;
 
@@ -186,7 +187,7 @@ module.exports = (io, socket, userSocketMap) => {
       // Prevent sending if (a) the receiver has blocked the sender, or
       // (b) the sender has blocked the receiver.
       const [receiverDoc, senderDoc] = await Promise.all([
-        User.findById(receiverId, "blockedUsers"),
+        User.findById(receiverId, "blockedUsers emailNotificationsEnabled email name"),
         User.findById(senderId, "blockedUsers"),
       ]);
       const isBlockedByReceiver = receiverDoc?.blockedUsers?.some(
@@ -221,6 +222,7 @@ module.exports = (io, socket, userSocketMap) => {
         conversationId,
         receiverId,
         isReceiverInsideChatRoom,
+        replyTo: replyTo || null,
       });
 
       io.to(conversationId).emit("receive-message", message);
@@ -244,6 +246,19 @@ module.exports = (io, socket, userSocketMap) => {
           sender: senderInfo,
           conversation: conversation
         });
+
+        // Fire-and-forget email notification — only when receiver is completely
+        // offline (no open sockets) and has email notifications enabled.
+        // Never awaited so it adds zero latency to message delivery.
+        const isReceiverOffline = !receiverSocketIds || receiverSocketIds.size === 0;
+        if (isReceiverOffline && receiverDoc?.emailNotificationsEnabled && receiverDoc?.email) {
+          sendMessageEmail(
+            { name: receiverDoc.name, email: receiverDoc.email },
+            { name: senderInfo.name, profilePic: senderInfo.profilePic },
+            text || null,
+            conversationId
+          );
+        }
       }
     } catch (error) {
       console.error("Error in send-message handler:", error);
@@ -266,14 +281,52 @@ module.exports = (io, socket, userSocketMap) => {
       if (!updated) return;
 
       if (scope === 'everyone') {
-        // Broadcast to every member so they see the tombstone in real-time
+        // Find the newest non-tombstone message to determine the new preview text
+        const latestNonDeleted = await Message.findOne({
+          conversationId,
+          softDeleted: { $ne: true },
+        }).sort({ createdAt: -1 });
+
+        // If the tombstone is newer (or no other messages exist) → show tombstone text
+        const newLatest =
+          !latestNonDeleted ||
+          new Date(updated.createdAt) >= new Date(latestNonDeleted.createdAt)
+            ? 'This message was deleted'
+            : latestNonDeleted.text || 'sent an image';
+
+        // Persist new preview to the conversation document
+        await Conversation.findByIdAndUpdate(
+          conversationId,
+          { latestmessage: newLatest },
+          { timestamps: false }
+        );
+
+        // Broadcast to every member so they see the tombstone + updated preview in real-time
         io.to(conversationId).emit('message-deleted', {
           messageId,
           conversationId,
           softDeleted: true,
+          latestmessage: newLatest,
+        });
+      } else {
+        // scope="me": find the new latest message visible to this user only
+        const latestVisible = await Message.findOne({
+          conversationId,
+          hiddenFrom: { $ne: currentUserId },
+        }).sort({ createdAt: -1 });
+
+        const newLatest = latestVisible
+          ? (latestVisible.softDeleted ? 'This message was deleted' : (latestVisible.text || 'sent an image'))
+          : '';
+
+        // Only emit to the requester so their sidebar preview updates
+        socket.emit('message-deleted', {
+          messageId,
+          conversationId,
+          softDeleted: false,
+          latestmessage: newLatest,
         });
       }
-      // scope="me": no broadcast — remove from local state on client only
     } catch (error) {
       console.error('Error in delete-message handler:', error);
     }

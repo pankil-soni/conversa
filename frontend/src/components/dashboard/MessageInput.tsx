@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react"
-import { ArrowRight, ImagePlus, ShieldX } from "lucide-react"
+import { ArrowRight, ImagePlus, ShieldX, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -14,19 +14,23 @@ import { emitSendMessage, emitTyping, emitStopTyping } from "@/lib/socket"
 import { userApi } from "@/lib/api"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import type { Message } from "@/hooks/use-chat"
 
 interface Props {
     conversationId: string
     myId: string
     receiverId: string
+    receiverName?: string
     isReceiverBot?: boolean
     isBlocked?: boolean
     blockedByThem?: boolean
+    replyToMessage?: Message | null
+    onCancelReply?: () => void
 }
 
 const STOP_TYPING_DELAY = 1500
 
-export default function MessageInput({ conversationId, myId, receiverId, isReceiverBot, isBlocked, blockedByThem }: Props) {
+export default function MessageInput({ conversationId, myId, receiverId, receiverName, isReceiverBot, isBlocked, blockedByThem, replyToMessage, onCancelReply }: Props) {
     const [text, setText] = useState("")
     const [uploading, setUploading] = useState(false)
     const [imageDialogOpen, setImageDialogOpen] = useState(false)
@@ -59,6 +63,11 @@ export default function MessageInput({ conversationId, myId, receiverId, isRecei
         textareaRef.current?.focus()
     }, [conversationId])
 
+    // Auto-focus when a reply is set so the user can type right away
+    useEffect(() => {
+        if (replyToMessage) textareaRef.current?.focus()
+    }, [replyToMessage])
+
     const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setText(e.target.value)
 
@@ -83,8 +92,9 @@ export default function MessageInput({ conversationId, myId, receiverId, isRecei
         if (!trimmed) return
         clearTimeout(stopTypingTimer.current!)
         emitStopTypingNow()
-        emitSendMessage({ conversationId, text: trimmed })
+        emitSendMessage({ conversationId, text: trimmed, replyTo: replyToMessage?._id ?? null })
         setText("")
+        onCancelReply?.()
         textareaRef.current?.focus()
     }
 
@@ -124,7 +134,8 @@ export default function MessageInput({ conversationId, myId, receiverId, isRecei
             // AWS SDK v3 returns the object key as fields.key (lowercase)
             const imageUrl = `${url}${fields.key}`
             const trimmedCaption = caption.trim()
-            emitSendMessage({ conversationId, imageUrl, ...(trimmedCaption && { text: trimmedCaption }) })
+            emitSendMessage({ conversationId, imageUrl, ...(trimmedCaption && { text: trimmedCaption }), replyTo: replyToMessage?._id ?? null })
+            onCancelReply?.()
             closeImageDialog()
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to send image.")
@@ -153,7 +164,31 @@ export default function MessageInput({ conversationId, myId, receiverId, isRecei
                     </span>
                 </div>
             ) : (
-            <div className="flex items-end gap-2 p-3 border-t bg-background">
+            <div className="border-t bg-background">
+                {/* Reply strip */}
+                {replyToMessage && (
+                    <div className="flex items-center gap-3 px-4 pt-2.5 pb-1">
+                        <div className="flex-1 min-w-0 pl-2 border-l-2 border-primary">
+                            <p className="text-xs font-semibold text-primary truncate">
+                                Replying to {replyToMessage.senderId === myId ? "yourself" : (receiverName || "them")}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                                {replyToMessage.softDeleted
+                                    ? "This message was deleted"
+                                    : replyToMessage.text || "🖼️ Photo"}
+                            </p>
+                        </div>
+                        <button
+                            onClick={onCancelReply}
+                            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                            title="Cancel reply"
+                        >
+                            <X className="size-4" />
+                        </button>
+                    </div>
+                )}
+
+                <div className="flex items-end gap-2 p-3">
                 {/* Image upload button */}
                 {!isReceiverBot && (<><Button
                     type="button"
@@ -197,6 +232,7 @@ export default function MessageInput({ conversationId, myId, receiverId, isRecei
                 >
                     <ArrowRight className="size-5" />
                 </Button>
+                </div>
             </div>
             )}
 

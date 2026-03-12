@@ -1,0 +1,49 @@
+services:
+
+  # ── MongoDB ──────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    ports:
+      - "27019:27017" # Expose on 27019 to avoid conflicts with local MongoDB
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME}
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Backend (Node / Express) ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - "5500:5500"
+    env_file: ./.env           # load all vars from root .env
+    environment:
+      # Override MONGO_URI so the backend reaches the mongo service, not localhost
+      MONGO_URI: mongodb://mongo:27017/
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  # ── Frontend (Vite build → nginx) ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # VITE_API_URL is baked into the JS bundle at build time
+        VITE_API_URL: ${VITE_API_URL}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:

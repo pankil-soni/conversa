@@ -36,7 +36,9 @@ const allMessage = async (req, res) => {
     const messages = await Message.find({
       conversationId: req.params.id,
       hiddenFrom: { $ne: req.user.id },
-    }).lean();
+    })
+      .populate('replyTo', 'text imageUrl senderId softDeleted')
+      .lean();
 
     // Sanitize soft-deleted messages before sending to client:
     // replace content with tombstone text so the real content
@@ -219,6 +221,7 @@ const sendMessageHandler = async (data) => {
     conversationId,
     receiverId,
     isReceiverInsideChatRoom,
+    replyTo,
   } = data;
   const conversation = await Conversation.findById(conversationId);
   if (!isReceiverInsideChatRoom) {
@@ -228,6 +231,7 @@ const sendMessageHandler = async (data) => {
       text,
       imageUrl,
       seenBy: [],
+      ...(replyTo && { replyTo }),
     });
 
     // update conversation latest message and increment unread count of receiver by 1
@@ -238,6 +242,7 @@ const sendMessageHandler = async (data) => {
       }
     });
     await conversation.save();
+    await message.populate('replyTo', 'text imageUrl senderId softDeleted');
     return message;
   } else {
     // create new message with seenby receiver
@@ -252,9 +257,11 @@ const sendMessageHandler = async (data) => {
           seenAt: new Date(),
         },
       ],
+      ...(replyTo && { replyTo }),
     });
     conversation.latestmessage = text || "sent an image";
     await conversation.save();
+    await message.populate('replyTo', 'text imageUrl senderId softDeleted');
     return message;
   }
 };

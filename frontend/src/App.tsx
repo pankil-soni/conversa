@@ -12,6 +12,7 @@ import User from "./pages/User";
 import ConversationLayout from "./components/layout/ConversationLayout";
 import UserProfile from "./pages/UserProfile";
 import StarredMessages from "./pages/StarredMessages";
+import VerifyEmail from "./pages/VerifyEmail";
 
 export function App() {
 
@@ -32,6 +33,7 @@ export function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route element={<DashboardLayout />}>
           <Route path="/user" element={<User />} />
           <Route path="/user/profile" element={<UserProfile />} />

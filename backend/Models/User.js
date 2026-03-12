@@ -46,6 +46,14 @@ const Userschema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailNotificationsEnabled: {
+      type: Boolean,
+      default: true,
+    },
     isBot: {
       type: Boolean,
       default: false,
@@ -61,7 +69,11 @@ const Userschema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "Conversation",
       },
-    ]
+    ],
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

@@ -1,13 +1,44 @@
 import { useState, useEffect } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { Eye, EyeOff, MessageCircle, ArrowLeft } from "lucide-react"
+import { Eye, EyeOff, ArrowLeft, MessageCircle, Zap, Shield, Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { useAuth } from "@/hooks/use-auth"
 import { toast } from "sonner"
+
+// Floating feature cards shown on large screens
+const spotlights = [
+    {
+        title: "Lightning fast",
+        desc: "Messages delivered instantly via WebSocket connections.",
+        icon: Zap,
+        side: "left" as const,
+        top: "20%",
+    },
+    {
+        title: "Private & secure",
+        desc: "Your conversations stay between you and the people you trust.",
+        icon: Shield,
+        side: "left" as const,
+        top: "52%",
+    },
+    {
+        title: "Personal AI Chatbot",
+        desc: "Chat with your own AI assistant, powered by Gemini.",
+        icon: Bot,
+        side: "right" as const,
+        top: "20%",
+    },
+    {
+        title: "Passwordless login",
+        desc: "Sign in instantly with a one-time code sent to your inbox.",
+        icon: MessageCircle,
+        side: "right" as const,
+        top: "52%",
+    },
+]
 
 export default function SignUp() {
     const navigate = useNavigate()
@@ -63,49 +94,61 @@ export default function SignUp() {
     const strength = passwordStrength()
 
     return (
-        <div className="h-full flex overflow-hidden">
-            {/* ── Left decorative panel ─────────────────────────────── */}
-            <div className="hidden lg:flex lg:w-[45%] relative flex-col items-center justify-center overflow-hidden bg-primary dark:bg-primary/80">
-                {/* abstract blobs */}
-                <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-white/10 blur-3xl" />
-                <div className="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-black/20 blur-3xl" />
-                <div className="absolute top-1/2 -right-16 w-56 h-56 rounded-full bg-white/5 blur-2xl" />
-
-                <div className="relative z-10 text-white max-w-sm text-center px-8 space-y-6">
-                    <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm mx-auto shadow-xl">
-                        <MessageCircle className="w-8 h-8 text-white" strokeWidth={1.5} />
+        <div className="relative h-full overflow-hidden bg-background">
+            {/* ── Spotlight cards – visible on large screens only ─────── */}
+            {spotlights.map((s) => {
+                const Icon = s.icon
+                return (
+                    <div
+                        key={s.title}
+                        className="pointer-events-none absolute hidden xl:flex flex-col gap-2 w-56 p-4 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm shadow-lg shadow-black/5 dark:shadow-black/20"
+                        style={{
+                            [s.side]: "calc(50% - 340px - 240px)",
+                            top: s.top,
+                            transform: "translateX(0)",
+                        }}
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                                <Icon className="h-4 w-4 text-primary" />
+                            </span>
+                            <p className="text-sm font-semibold">{s.title}</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">{s.desc}</p>
                     </div>
-                    <div className="space-y-2">
-                        <h1 className="text-4xl font-bold tracking-tight">Join Conversa</h1>
-                        <p className="text-white/70 text-lg leading-relaxed">
-                            Create an account and start chatting in seconds.
-                        </p>
-                    </div>
-                </div>
-            </div>
+                )
+            })}
 
-            {/* ── Right form panel ──────────────────────────────────── */}
-            <div className="flex-1 flex items-center justify-center p-6 bg-background overflow-y-auto">
-                <div className="w-full max-w-md space-y-8">
+            {/* ── Scrollable center column ────────────────────────────── */}
+            <div className="relative z-10 h-full overflow-y-auto flex flex-col items-center justify-center px-4 py-10">
+                <div className="w-full max-w-100 flex flex-col gap-6">
 
-                    {/* back to home button */}
-                    <Link to="/" className="flex items-center gap-1">
-                        <Button variant={"outline"}>
-                            <ArrowLeft className="w-3 h-3" />
-                            Home
-                        </Button>
-                    </Link>
-
-                    <div className="space-y-1">
-                        <h2 className="text-2xl font-bold tracking-tight">Create an account</h2>
-                        <p className="text-muted-foreground text-sm">Fill in the details below to get started</p>
+                    {/* Brand */}
+                    <div className="flex flex-col items-center gap-3 text-center">
+                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 shadow-sm">
+                            <MessageCircle className="h-7 w-7 text-primary" strokeWidth={1.8} />
+                        </div>
+                        <div>
+                            <h1 className="text-[2.25rem] font-bold tracking-tight leading-none text-foreground">
+                                Conversa
+                            </h1>
+                            <p className="mt-1.5 text-sm text-muted-foreground">
+                                Chat with anyone, anywhere, instantly.
+                            </p>
+                        </div>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="space-y-5">
-                        {/* Name */}
-                        <div className="space-y-2">
-                            <Label htmlFor="name">Full name</Label>
-                            <div className="relative">
+                    {/* Form card */}
+                    <div className="rounded-2xl border border-border/60 bg-card shadow-xl shadow-black/5 dark:shadow-black/25 p-6">
+                        <div className="mb-5">
+                            <h2 className="text-lg font-semibold tracking-tight">Create an account</h2>
+                            <p className="text-xs text-muted-foreground mt-0.5">Fill in the details below to get started</p>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            {/* Name */}
+                            <div className="space-y-1.5">
+                                <Label htmlFor="name">Full name</Label>
                                 <Input
                                     id="name"
                                     type="text"
@@ -116,116 +159,120 @@ export default function SignUp() {
                                     disabled={loading}
                                 />
                             </div>
-                        </div>
 
-                        {/* Email */}
-                        <div className="space-y-2">
-                            <Label htmlFor="email">Email address</Label>
-                            <div className="relative">
+                            {/* Email */}
+                            <div className="space-y-1.5">
+                                <Label htmlFor="email">Email address</Label>
                                 <Input
                                     id="email"
                                     type="email"
-                                    placeholder="Enter your email"
+                                    placeholder="you@example.com"
                                     autoComplete="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     disabled={loading}
                                 />
                             </div>
-                        </div>
 
-                        {/* Password */}
-                        <div className="space-y-2">
-                            <Label htmlFor="password">Password</Label>
-                            <div className="relative">
-                                <Input
-                                    id="password"
-                                    type={showPass ? "text" : "password"}
-                                    placeholder="Min. 6 characters"
-                                    autoComplete="new-password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    disabled={loading}
-                                    className="pr-10"
-                                />
-                                <button
-                                    type="button"
-                                    tabIndex={-1}
-                                    onClick={() => setShowPass((v) => !v)}
-                                    className="absolute inset-y-0 right-3 flex items-center text-muted-foreground hover:text-foreground transition-colors"
-                                >
-                                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
-                            </div>
-                            {/* Strength bar */}
-                            {strength && (
-                                <div className="space-y-1">
-                                    <div className="flex gap-1">
-                                        {[1, 2, 3].map((i) => (
-                                            <div
-                                                key={i}
-                                                className={`h-1 flex-1 rounded-full transition-colors ${i <= strength.level ? strength.color : "bg-muted"}`}
-                                            />
-                                        ))}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                        Password strength: <span className="font-medium text-foreground">{strength.label}</span>
-                                    </p>
+                            {/* Password */}
+                            <div className="space-y-1.5">
+                                <Label htmlFor="password">Password</Label>
+                                <div className="relative">
+                                    <Input
+                                        id="password"
+                                        type={showPass ? "text" : "password"}
+                                        placeholder="Min. 6 characters"
+                                        autoComplete="new-password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        disabled={loading}
+                                        className="pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        tabIndex={-1}
+                                        onClick={() => setShowPass((v) => !v)}
+                                        className="absolute inset-y-0 right-3 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                        {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
                                 </div>
-                            )}
-                        </div>
-
-                        {/* Confirm Password */}
-                        <div className="space-y-2">
-                            <Label htmlFor="confirmPassword">Confirm password</Label>
-                            <div className="relative">
-                                <Input
-                                    id="confirmPassword"
-                                    type={showConfirm ? "text" : "password"}
-                                    placeholder="Repeat your password"
-                                    autoComplete="new-password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    disabled={loading}
-                                    className={`pr-10 ${confirmPassword && confirmPassword !== password
-                                        ? "border-destructive focus-visible:ring-destructive/20"
-                                        : ""
-                                        }`}
-                                />
-                                <button
-                                    type="button"
-                                    tabIndex={-1}
-                                    onClick={() => setShowConfirm((v) => !v)}
-                                    className="absolute inset-y-0 right-3 flex items-center text-muted-foreground hover:text-foreground transition-colors"
-                                >
-                                    {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
+                                {/* Strength bar */}
+                                {strength && (
+                                    <div className="space-y-1">
+                                        <div className="flex gap-1">
+                                            {[1, 2, 3].map((i) => (
+                                                <div
+                                                    key={i}
+                                                    className={`h-1 flex-1 rounded-full transition-colors ${i <= strength.level ? strength.color : "bg-muted"}`}
+                                                />
+                                            ))}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Strength: <span className="font-medium text-foreground">{strength.label}</span>
+                                        </p>
+                                    </div>
+                                )}
                             </div>
-                            {confirmPassword && confirmPassword !== password && (
-                                <p className="text-xs text-destructive">Passwords do not match</p>
-                            )}
-                        </div>
 
-                        <Button
-                            type="submit"
-                            className="w-full p-6 bg-primary/90 hover:bg-primary text-white"
-                            disabled={loading}
-                        >
-                            {loading ? <Spinner className="w-4 h-4 mr-2" /> : null}
-                            {loading ? "Creating account…" : "Create account"}
-                        </Button>
-                    </form>
+                            {/* Confirm Password */}
+                            <div className="space-y-1.5">
+                                <Label htmlFor="confirmPassword">Confirm password</Label>
+                                <div className="relative">
+                                    <Input
+                                        id="confirmPassword"
+                                        type={showConfirm ? "text" : "password"}
+                                        placeholder="Repeat your password"
+                                        autoComplete="new-password"
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        disabled={loading}
+                                        className={`pr-10 ${confirmPassword && confirmPassword !== password
+                                            ? "border-destructive focus-visible:ring-destructive/20"
+                                            : ""
+                                            }`}
+                                    />
+                                    <button
+                                        type="button"
+                                        tabIndex={-1}
+                                        onClick={() => setShowConfirm((v) => !v)}
+                                        className="absolute inset-y-0 right-3 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                        {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
+                                </div>
+                                {confirmPassword && confirmPassword !== password && (
+                                    <p className="text-xs text-destructive">Passwords do not match</p>
+                                )}
+                            </div>
 
-                    <Separator />
-                    <p className="text-center text-sm text-muted-foreground">
-                        Already have an account?{" "}
-                        <Link
-                            to="/login"
-                            className="font-medium  hover:opacity-80 transition-opacity"
-                        >
-                            Sign in
+                            <Button
+                                type="submit"
+                                className="w-full bg-primary/90 hover:bg-primary"
+                                disabled={loading}
+                            >
+                                {loading ? <Spinner className="w-4 h-4 mr-2" /> : null}
+                                {loading ? "Creating account…" : "Create account"}
+                            </Button>
+                        </form>
+                    </div>
+
+                    {/* Footer links */}
+                    <div className="flex flex-col items-center gap-3">
+                        <p className="text-center text-sm text-muted-foreground">
+                            Already have an account?{" "}
+                            <Link to="/login" className="font-medium text-primary hover:opacity-80 transition-opacity">
+                                Sign in
+                            </Link>
+                        </p>
+                        <Link to="/">
+                            <Button variant="link" size="sm" className="text-muted-foreground text-xs h-8">
+                                <ArrowLeft className="w-3 h-3 mr-1" />
+                                Back to home
+                            </Button>
                         </Link>
-                    </p>
+                    </div>
+
                 </div>
             </div>
         </div>
