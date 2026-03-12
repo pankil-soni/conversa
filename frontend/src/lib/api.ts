@@ -211,6 +211,12 @@ export const userApi = {
         fetch(`${API_BASE}/user/block-status/${userId}`, {
             headers: headers(),
         }).then((res) => handleResponse<{ iBlockedThem: boolean; theyBlockedMe: boolean }>(res)),
+
+    deleteAccount: () =>
+        fetch(`${API_BASE}/user/delete`, {
+            method: "DELETE",
+            headers: headers(),
+        }).then(handleResponse),
 };
 
 export { API_BASE };

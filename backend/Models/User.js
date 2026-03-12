@@ -61,7 +61,11 @@ const Userschema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "Conversation",
       },
-    ]
+    ],
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

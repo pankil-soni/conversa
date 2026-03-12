@@ -2,6 +2,7 @@
 import { useState, useRef } from "react"
 import { Camera, Pencil, Check, X, Eye, EyeOff, Loader2, Trash2, Sun, Moon, Monitor } from "lucide-react"
 import { toast } from "sonner"
+import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/hooks/use-auth"
 import { userApi } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
@@ -12,6 +13,16 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 /* ─── localStorage keys ─────────────────────────────────────────────────── */
 export const LS_NOTIF_BANNERS = "notif-banners-enabled"
@@ -149,8 +160,9 @@ function PasswordInput({
 
 /* ─── main page ─────────────────────────────────────────────────────────── */
 const UserProfile = () => {
-    const { user, setUser } = useAuth()
+    const { user, setUser, logout } = useAuth()
     const { theme, setTheme } = useTheme()
+    const navigate = useNavigate()
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [avatarUploading, setAvatarUploading] = useState(false)
 
@@ -163,6 +175,11 @@ const UserProfile = () => {
     // notification preferences
     const [bannersEnabled, setBannersEnabled] = useState(() => getStoredBool(LS_NOTIF_BANNERS))
     const [soundEnabled, setSoundEnabled] = useState(() => getStoredBool(LS_NOTIF_SOUND))
+
+    // delete account dialog
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+    const [deleteConfirmText, setDeleteConfirmText] = useState("")
+    const [deleting, setDeleting] = useState(false)
 
     if (!user) return null
 
@@ -267,7 +284,30 @@ const UserProfile = () => {
         localStorage.setItem(LS_NOTIF_SOUND, String(val))
     }
 
+    /* ── logout ─────────────────────────────────────────────────────────── */
+    const handleLogout = () => {
+        logout()
+        navigate("/login")
+    }
+
+    /* ── delete account ─────────────────────────────────────────────────── */
+    const handleDeleteAccount = async () => {
+        setDeleting(true)
+        try {
+            await userApi.deleteAccount()
+            toast.success("Account deleted")
+            logout()
+            navigate("/login")
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to delete account")
+        } finally {
+            setDeleting(false)
+            setDeleteDialogOpen(false)
+        }
+    }
+
     return (
+        <>
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
             <div className="max-w-xl mx-auto space-y-6">
 
@@ -436,8 +476,68 @@ const UserProfile = () => {
                     </CardContent>
                 </Card>
 
+                {/* ── Account Actions card ──────────────────────────────── */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Account</CardTitle>
+                        <CardDescription>Manage your session and account</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        <Button
+                            variant="outline"
+                            className="w-full justify-center gap-2"
+                            onClick={handleLogout}
+                        >
+                            Log Out
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            className="w-full justify-center gap-2"
+                            onClick={() => { setDeleteConfirmText(""); setDeleteDialogOpen(true) }}
+                        >
+                            Delete My Account
+                        </Button>
+                    </CardContent>
+                </Card>
+
             </div>
         </div>
+
+        {/* ── Delete Account confirmation dialog ─────────────────────── */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete account?</AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                        <div className="space-y-3">
+                            <p>
+                                This action <strong>cannot be undone</strong>. Your profile will be anonymised —
+                                your name, email, and bio will be cleared, but your messages and conversations
+                                will remain visible to other participants.
+                            </p>
+                            <p>Type <strong>DELETE</strong> below to confirm:</p>
+                            <Input
+                                value={deleteConfirmText}
+                                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                placeholder="DELETE"
+                                className="font-mono"
+                            />
+                        </div>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        disabled={deleteConfirmText !== "DELETE" || deleting}
+                        onClick={handleDeleteAccount}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                        {deleting ? <><Loader2 className="size-4 mr-2 animate-spin" />Deleting…</> : "Delete Account"}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+        </>
     )
 }
 

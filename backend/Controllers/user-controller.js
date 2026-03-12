@@ -127,10 +127,10 @@ const PINNED_EMAIL = "pmsoni2016@gmail.com";
 const getNonFriendsList = async (req, res) => {
   try {
     const search = (req.query.search || "").trim();
-    const sort   = req.query.sort   || "name_asc";   // name_asc | name_desc | last_seen_recent | last_seen_oldest
-    const page   = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit  = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
-    const skip   = (page - 1) * limit;
+    const sort = req.query.sort || "name_asc";   // name_asc | name_desc | last_seen_recent | last_seen_oldest
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
 
     // IDs already in a conversation with the requester (including the requester themselves)
     const conversations = await Conversation.find({ members: { $in: [req.user.id] } });
@@ -138,24 +138,24 @@ const getNonFriendsList = async (req, res) => {
 
     // Base filter: not in any conversation + not a bot
     const baseFilter = {
-      _id:   { $nin: excludedIds },
+      _id: { $nin: excludedIds },
       email: { $not: /bot$/ },
     };
 
     // Search filter
     if (search) {
       baseFilter.$or = [
-        { name:  { $regex: search, $options: "i" } },
+        { name: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
       ];
     }
 
     // Sort map
     const sortMap = {
-      name_asc:          { name:     1 },
-      name_desc:         { name:    -1 },
-      last_seen_recent:  { lastSeen: -1 },
-      last_seen_oldest:  { lastSeen:  1 },
+      name_asc: { name: 1 },
+      name_desc: { name: -1 },
+      last_seen_recent: { lastSeen: -1 },
+      last_seen_oldest: { lastSeen: 1 },
     };
     const mongoSort = sortMap[sort] || sortMap.name_asc;
 
@@ -175,7 +175,7 @@ const getNonFriendsList = async (req, res) => {
 
     // Adjust skip/limit on page 1 to account for the pinned slot
     const effectiveLimit = (pinnedUser && page === 1) ? limit - 1 : limit;
-    const effectiveSkip  = (pinnedUser && page > 1)  ? skip  - 1 : skip;
+    const effectiveSkip = (pinnedUser && page > 1) ? skip - 1 : skip;
 
     const [users, total] = await Promise.all([
       User.find(mainFilter).sort(mongoSort).skip(Math.max(0, effectiveSkip)).limit(effectiveLimit).select("-password"),
@@ -184,7 +184,7 @@ const getNonFriendsList = async (req, res) => {
 
     // Total including the pinned user
     const grandTotal = total + (pinnedUser ? 1 : 0);
-    const hasMore    = skip + limit < grandTotal;
+    const hasMore = skip + limit < grandTotal;
 
     res.json({
       users,
@@ -232,4 +232,32 @@ const updateprofile = async (req, res) => {
   }
 };
 
-module.exports = { getPresignedUrl, getOnlineStatus, getNonFriendsList, updateprofile, blockUser, unblockUser, getBlockStatus };
+const deleteAccount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const anonymisedEmail = `deleted-${crypto.randomUUID()}-${user.email}`;
+
+    await User.findByIdAndUpdate(userId, {
+      isDeleted: true,
+      name: "Deleted Conversa User",
+      about: "",
+      email: anonymisedEmail,
+      profilePic: "https://ui-avatars.com/api/?name=Deleted+User&background=808080&color=ffffff&bold=true",
+      // Wipe login credentials so the account cannot be accessed again
+      password: "",
+      otp: "",
+      otpExpiry: null,
+      lastSeen: null
+    });
+
+    res.status(200).json({ message: "Account deleted" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+module.exports = { getPresignedUrl, getOnlineStatus, getNonFriendsList, updateprofile, blockUser, unblockUser, getBlockStatus, deleteAccount };
