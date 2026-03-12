@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { LogOut, MessagesSquare, Settings, Star } from "lucide-react"
+import { Bot, LogOut, MessagesSquare, Settings, Star } from "lucide-react"
 import {
     Sidebar,
     SidebarContent,
@@ -75,12 +75,12 @@ export default function DashboardSidebar() {
                                             asChild
                                             isActive={isActive}
                                             title={tooltip}
-                                            className="min-w-10 min-h-10 p-4"
+                                            className={`min-w-10 min-h-10 p-4 ${isActive ? "bg-muted-foreground/10!" : ""}`}
                                         >
                                             <Link to={href} className="flex items-center gap-2">
                                                 {/* icon — with overlay badge in collapsed/icon mode */}
                                                 <div className="relative shrink-0">
-                                                    <Icon className={`min-h-5 min-w-5 text-muted-foreground`} />
+                                                    <Icon className={`mx-0.5 min-h-5 min-w-5 text-muted-foreground`} />
                                                     {showBadge && state === "collapsed" && (
                                                         <span className="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-white leading-none">
                                                             {unreadChatsCount > 9 ? "9+" : unreadChatsCount}
@@ -99,16 +99,15 @@ export default function DashboardSidebar() {
                                     </SidebarMenuItem>
                                 )
                             })}
-                            <Separator className="my-1" />
+                            <Separator className="mt-1 mb-3" />
                             <SidebarMenuItem title="AI Chatbot" key={"ai-chatbot"} className="min-w-10 min-h-10">
                                 <SidebarMenuButton
                                     asChild
-                                    className="min-w-12 min-h-12"
+                                    className={`min-w-10 min-h-10 ${state=="collapsed"&&"rounded-full"} bg-primary hover:bg-primary p-4 border-2 border-primary text-background hover:text-background`}
                                 >
                                     <Link to={`/user/conversations/${aiChatbotConversationId}`} className="flex items-center gap-2">
-                                        {/* icon — with overlay badge in collapsed/icon mode */}
-                                        <div className="shrink-0 rounded-full p-0.5" style={{ background: "linear-gradient(135deg, #82DAFF, #3B1F6E, #FF94EB)" }}>
-                                            <img src="/chatbot.png" alt="Chatbot" className="w-7 h-7 rounded-full block" />
+                                        <div className="relative shrink-0">
+                                            <Bot className="mx relative min-h-5 min-w-5" />
                                         </div>
                                         <span>AI Chatbot</span>
                                     </Link>
@@ -147,9 +146,9 @@ export default function DashboardSidebar() {
                         <SidebarMenuButton
                             size="lg"
                             // tooltip={user?.name ?? "Account"}
-                            className="cursor-default hover:bg-transparent active:bg-transparent"
+                            className="cursor-default hover:bg-transparent active:bg-transparent p-1"
                         >
-                            <Avatar className="size-8 shrink-0 rounded-lg">
+                            <Avatar className="size-7 shrink-0 rounded-lg">
                                 <AvatarImage src={user?.profilePic} alt={user?.name} />
                                 <AvatarFallback className="rounded-lg bg-primary/20  text-xs font-semibold">
                                     {initials}
@@ -170,7 +169,7 @@ export default function DashboardSidebar() {
                         <SidebarMenuButton
                             title="Log out"
                             onClick={handleLogout}
-                            className="mt-0.5 text-destructive hover:text-destructive hover:bg-destructive/10 active:bg-destructive/10 min-h-10 min-w-10"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10 active:bg-destructive/10 min-h-10 min-w-10"
                         >
                             <LogOut className="min-h-5 min-w-5" />
                             <span>Log out</span>

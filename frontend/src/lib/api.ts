@@ -24,6 +24,7 @@ export interface AuthTokenResponse {
         name: string;
         email: string;
         profilePic: string;
+        isEmailVerified: boolean;
     };
 }
 

@@ -173,6 +173,7 @@ const login = async (req, res) => {
         name: user.name,
         email: user.email,
         profilePic: user.profilePic,
+        isEmailVerified: user.isEmailVerified,
       },
     });
   } catch (error) {
