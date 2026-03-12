@@ -7,14 +7,11 @@ const { JWT_SECRET, EMAIL, PASSWORD } = require("../secrets.js");
 
 let mailTransporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
+  port: 465,
+  secure: true,
   auth: {
     user: EMAIL,
     pass: PASSWORD,
-  },
-  tls: {
-    rejectUnauthorized: false  // Helps with self-signed cert issues
   },
   connectionTimeout: 120000,
   greetingTimeout: 120000,
