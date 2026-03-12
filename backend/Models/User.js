@@ -46,6 +46,10 @@ const Userschema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
     isBot: {
       type: Boolean,
       default: false,

@@ -94,6 +94,19 @@ export const authApi = {
             headers: headers(),
             body: JSON.stringify({ email }),
         }).then(handleResponse),
+
+    sendVerificationOtp: () =>
+        fetch(`${API_BASE}/auth/send-verification-otp`, {
+            method: "POST",
+            headers: headers(),
+        }).then(handleResponse),
+
+    verifyEmail: (otp: string) =>
+        fetch(`${API_BASE}/auth/verify-email`, {
+            method: "POST",
+            headers: headers(),
+            body: JSON.stringify({ otp }),
+        }).then(handleResponse),
 };
 
 /* ─── conversations ────────────────────────────────────────────────────── */

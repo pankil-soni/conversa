@@ -15,10 +15,12 @@ export default function DashboardLayout() {
     useEffect(() => {
         if (!isUserLoading && !user) {
             navigate("/login", { replace: true })
+        } else if (!isUserLoading && user && !user.isEmailVerified) {
+            navigate("/verify-email", { replace: true })
         }
     }, [user, isUserLoading, navigate])
 
-    if (isUserLoading || !user) return null
+    if (isUserLoading || !user || !user.isEmailVerified) return null
 
     return (
         <ConversationsProvider>
