@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils"
 import type { Message } from "@/hooks/use-chat"
 import { Button } from "../ui/button"
+import { useNavigate } from "react-router-dom"
 
 interface Props {
     message: Message
@@ -42,6 +43,7 @@ export default function SingleMessage({ message, isMine, isBot, receiverId, myId
     const [hovered, setHovered] = useState(false)
     const [copied, setCopied] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
+    const navigate = useNavigate()
 
     const isStarred = message.starredBy?.includes(myId)
 
@@ -65,8 +67,7 @@ export default function SingleMessage({ message, isMine, isBot, receiverId, myId
                     "group flex items-end gap-2",
                     isMine ? "ml-auto flex-row-reverse max-w-[75%]" : isBot ? "mr-auto max-w-[85%]" : "mr-auto max-w-[75%]",
                     selectMode && "cursor-pointer",
-                    selectMode && selected && (isMine ? "pr-2" : "pl-2"),
-                    highlighted && "animate-highlight rounded-xl"
+                    selectMode && selected && (isMine ? "pr-2" : "pl-2")
                 )}
                 onMouseEnter={() => { if (!selectMode) setHovered(true) }}
                 onMouseLeave={() => { if (!selectMode) setHovered(false) }}
@@ -86,17 +87,21 @@ export default function SingleMessage({ message, isMine, isBot, receiverId, myId
                         "relative px-3.5 py-2 text-sm shadow-sm transition-shadow",
                         isMine
                             ? "bg-primary text-white rounded-2xl rounded-br-sm"
-                            : "bg-muted text-foreground rounded-2xl rounded-bl-sm"
+                            : "bg-muted text-foreground rounded-2xl rounded-bl-sm",
+                        highlighted && "animate-highlight"
                     )}
                 >
                     {/* Reply preview — shown when this message is a reply to another */}
                     {message.replyTo && !message.softDeleted && (
-                        <div className={cn(
-                            "my-2 px-2 py-1 rounded border-l-2 text-xs space-y-0.5 max-w-full",
-                            isMine
-                                ? "border-white/50 bg-white/10"
-                                : "border-primary/50 bg-primary/5 dark:bg-primary/10"
-                        )}>
+                        <div
+                            onClick={() => { navigate(`/user/conversations/${message.conversationId}?highlight=${message.replyTo?._id}`) }}
+                            className={cn(
+                                "my-2 px-2 py-1 rounded border-l-2 text-xs space-y-0.5 max-w-full cursor-pointer",
+                                isMine
+                                    ? "border-white/50 bg-white/10"
+                                    : "border-primary/50 bg-primary/5 dark:bg-primary/10"
+
+                            )}>
                             <p className={cn("font-semibold truncate", isMine ? "text-white/80" : "text-primary")}>
                                 {message.replyTo.senderId === myId ? "You" : receiverName}
                             </p>

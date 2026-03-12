@@ -156,10 +156,10 @@
 
 /* ── highlight animation for jump-to-message ────────────────────────────── */
 @keyframes highlight-pulse {
-  0%   { background-color: transparent; }
-  20%  { background-color: color-mix(in oklch, var(--primary) 18%, transparent); }
-  80%  { background-color: color-mix(in oklch, var(--primary) 18%, transparent); }
-  100% { background-color: transparent; }
+  0%   { box-shadow: 0 0 0 0px  color-mix(in oklch, var(--primary) 0%,  transparent); }
+  25%  { box-shadow: 0 0 0 2px  color-mix(in oklch, var(--primary) 50%, transparent); }
+  75%  { box-shadow: 0 0 0 2px  color-mix(in oklch, var(--primary) 50%, transparent); }
+  100% { box-shadow: 0 0 0 0px  color-mix(in oklch, var(--primary) 0%,  transparent); }
 }
 .animate-highlight {
   animation: highlight-pulse 2s ease-in-out forwards;
